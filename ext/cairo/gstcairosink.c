@@ -1,5 +1,6 @@
 /* GStreamer
- * Copyright (C) 2013 FIXME <fixme@example.com>
+ * Copyright (C) 2013 Samsung Electronics
+ *   @author: Guillaume Emont <guijemont@igalia.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -24,7 +25,7 @@
  * <refsect2>
  * <title>Example launch line</title>
  * |[
- * gst-launch -v fakesrc ! cairosink ! FIXME ! fakesink
+ * gst-launch -v videotestsrc ! cairosink
  * ]|
  * FIXME Describe what the pipeline does.
  * </refsect2>
@@ -38,7 +39,6 @@
 #include <gst/video/gstvideosink.h>
 #include "gstcairosink.h"
 
-GST_DEBUG_CATEGORY_STATIC (gst_cairo_sink_debug_category);
 #define GST_CAT_DEFAULT gst_cairo_sink_debug_category
 
 /* prototypes */
@@ -74,17 +74,21 @@ GST_STATIC_PAD_TEMPLATE ("sink",
 
 /* class initialization */
 
-#define DEBUG_INIT(bla) \
-  GST_DEBUG_CATEGORY_INIT (gst_cairo_sink_debug_category, "cairosink", 0, \
-      "debug category for cairosink element");
-
-GST_BOILERPLATE_FULL (GstCairoSink, gst_cairo_sink, GstVideoSink,
-    GST_TYPE_VIDEO_SINK, DEBUG_INIT);
+#define parent_class gst_cairo_sink_parent_class
+G_DEFINE_TYPE (GstCairoSink, gst_cairo_sink, GST_TYPE_CAIRO_SINK);
 
 static void
-gst_cairo_sink_base_init (gpointer g_class)
+gst_cairo_sink_class_init (GstCairoSinkClass * klass)
 {
-  GstElementClass *element_class = GST_ELEMENT_CLASS (g_class);
+  GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
+  GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
+  GstVideoSinkClass *video_sink_class = GST_VIDEO_SINK_CLASS (klass);
+
+  gobject_class->set_property = gst_cairo_sink_set_property;
+  gobject_class->get_property = gst_cairo_sink_get_property;
+  gobject_class->dispose = gst_cairo_sink_dispose;
+  gobject_class->finalize = gst_cairo_sink_finalize;
+  video_sink_class->show_frame = GST_DEBUG_FUNCPTR (gst_cairo_sink_show_frame);
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_cairo_sink_sink_template));
@@ -94,22 +98,7 @@ gst_cairo_sink_base_init (gpointer g_class)
 }
 
 static void
-gst_cairo_sink_class_init (GstCairoSinkClass * klass)
-{
-  GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
-  GstVideoSinkClass *video_sink_class = GST_VIDEO_SINK_CLASS (klass);
-
-  gobject_class->set_property = gst_cairo_sink_set_property;
-  gobject_class->get_property = gst_cairo_sink_get_property;
-  gobject_class->dispose = gst_cairo_sink_dispose;
-  gobject_class->finalize = gst_cairo_sink_finalize;
-  video_sink_class->show_frame = GST_DEBUG_FUNCPTR (gst_cairo_sink_show_frame);
-
-}
-
-static void
-gst_cairo_sink_init (GstCairoSink * cairosink,
-    GstCairoSinkClass * cairosink_class)
+gst_cairo_sink_init (GstCairoSink * cairosink)
 {
 
   cairosink->sinkpad =
@@ -169,31 +158,3 @@ gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf)
 
   return GST_FLOW_OK;
 }
-
-
-static gboolean
-plugin_init (GstPlugin * plugin)
-{
-
-  return gst_element_register (plugin, "cairosink", GST_RANK_NONE,
-      GST_TYPE_CAIRO_SINK);
-}
-
-#ifndef VERSION
-#define VERSION "0.0.FIXME"
-#endif
-#ifndef PACKAGE
-#define PACKAGE "FIXME_package"
-#endif
-#ifndef PACKAGE_NAME
-#define PACKAGE_NAME "FIXME_package_name"
-#endif
-#ifndef GST_PACKAGE_ORIGIN
-#define GST_PACKAGE_ORIGIN "http://FIXME.org/"
-#endif
-
-GST_PLUGIN_DEFINE (GST_VERSION_MAJOR,
-    GST_VERSION_MINOR,
-    cairosink,
-    "FIXME plugin description",
-    plugin_init, VERSION, "LGPL", PACKAGE_NAME, GST_PACKAGE_ORIGIN)
