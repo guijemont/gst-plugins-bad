@@ -1100,15 +1100,15 @@ AG_GST_CHECK_FEATURE(BZ2, [bz2 library], bz2, [
 
 ])
 
-#dnl *** cairo ***
-#translit(dnm, m, l) AM_CONDITIONAL(USE_CAIRO, true)
-#AG_GST_CHECK_FEATURE(CAIRO, [cairo plug-in], cairo, [
-#  PKG_CHECK_MODULES(CAIRO, cairo >= 1.0 glitz-glx, HAVE_CAIRO=yes, [
-#    HAVE_CAIRO=no
-#  ])
-#  AC_SUBST(CAIRO_CFLAGS)
-#  AC_SUBST(CAIRO_LIBS)
-#])
+dnl *** cairo ***
+translit(dnm, m, l) AM_CONDITIONAL(USE_CAIRO, true)
+AG_GST_CHECK_FEATURE(CAIRO, [cairo plug-in], cairo, [
+  PKG_CHECK_MODULES(CAIRO, cairo >= 1.0,  HAVE_CAIRO=yes, [
+    HAVE_CAIRO=no
+  ])
+  AC_SUBST(CAIRO_CFLAGS)
+  AC_SUBST(CAIRO_LIBS)
+])
 
 dnl *** chromaprint ***
 translit(dnm, m, l) AM_CONDITIONAL(USE_CHROMAPRINT, true)
@@ -2208,6 +2208,7 @@ AM_CONDITIONAL(USE_VOAMRWBENC, false)
 AM_CONDITIONAL(USE_VOAACENC, false)
 AM_CONDITIONAL(USE_APEXSINK, false)
 AM_CONDITIONAL(USE_BZ2, false)
+AM_CONDITIONAL(USE_CAIRO, false)
 AM_CONDITIONAL(USE_CHROMAPRINT, false)
 AM_CONDITIONAL(USE_CURL, false)
 AM_CONDITIONAL(USE_SSH2, false)
@@ -2484,6 +2485,7 @@ ext/voaacenc/Makefile
 ext/assrender/Makefile
 ext/apexsink/Makefile
 ext/bz2/Makefile
+ext/cairo/Makefile
 ext/chromaprint/Makefile
 ext/curl/Makefile
 ext/dash/Makefile
