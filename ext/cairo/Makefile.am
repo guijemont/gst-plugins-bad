@@ -5,6 +5,9 @@ noinst_HEADERS = \
 libgstcairobad_la_SOURCES = \
 	gstcairobad.c \
 	gstcairosink.c
+if HAVE_GLX
+libgstcairobad_la_SOURCES += gstcairobackendglx.c
+endif
 libgstcairobad_la_CFLAGS = \
 	$(GST_PLUGINS_BASE_CFLAGS) \
 	$(GST_BASE_CFLAGS) \

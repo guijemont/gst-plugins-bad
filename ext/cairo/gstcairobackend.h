@@ -1,3 +1,6 @@
+#ifndef _GST_CAIRO_BACKEND_H_
+#define _GST_CAIRO_BACKEND_H_
+
 #include <cairo.h>
 
 typedef struct _GstCairoBackend GstCairoBackend;
@@ -10,16 +13,16 @@ typedef struct _GstCairoBackend GstCairoBackend;
  */
 struct _GstCairoBackend {
   cairo_surface_t *     (*create_surface)       (void);
+
+  gboolean              need_own_thread;
 };
 
-/* This needs to be different from cairo_device_type_t because we want to make
- * a difference between variants of OpenGL/OpenGLES */
 enum GstCairoBackendType {
   GST_CAIRO_BACKEND_GLX         = 1,
   GST_CAIRO_BACKEND_XLIB        = 2,
 };
 #define GST_CAIRO_BACKEND_LAST 2
 
-GstCairoBackend * gst_cairo_backend_new (GstCairoBackendType backend_type);
+GstCairoBackend * gst_cairo_backend_new (GstCairoBackendType backend_type, int width, int height);
 
-gst_cairo_backend_destroy (GstCairoBackend *backend);
+#endif /* _GST_CAIRO_BACKEND_H_ */

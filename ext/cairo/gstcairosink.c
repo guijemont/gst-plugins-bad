@@ -38,11 +38,13 @@
 #include <gst/gst.h>
 #include <gst/video/gstvideosink.h>
 #include "gstcairosink.h"
+#include "gstcairobackend.h"
+
+#include <cairo-gl.h>
 
 #define GST_CAT_DEFAULT gst_cairo_sink_debug_category
 
 /* prototypes */
-
 
 static void gst_cairo_sink_set_property (GObject * object,
     guint property_id, const GValue * value, GParamSpec * pspec);
@@ -51,6 +53,8 @@ static void gst_cairo_sink_get_property (GObject * object,
 static void gst_cairo_sink_dispose (GObject * object);
 static void gst_cairo_sink_finalize (GObject * object);
 
+static gboolean gst_cairo_sink_start (GstBaseSink * base_sink);
+static gboolean gst_cairo_sink_stop (GstBaseSink * base_sink);
 
 static GstFlowReturn
 gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf);
@@ -59,8 +63,32 @@ gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf);
 
 enum
 {
-  PROP_0
+  PROP_0,
+  PROP_CAIRO_SURFACE,
+  PROP_CAIRO_BACKEND
 };
+
+/* FIXME: default to xlib if GLX not available */
+#define GST_CAIRO_BACKEND_DEFAULT GST_CAIRO_BACKEND_GLX
+
+#define GST_CAIRO_BACKEND_TYPE (gst_cairo_backend_get_type())
+static GType
+gst_cairo_backend_get_type (void)
+{
+  static GType backend_type = 0;
+
+  static const GEnumValue backend_values[] = {
+    {GST_CAIRO_BACKEND_GLX, "Use OpenGL and GLX", "glx"},
+    {GST_CAIRO_BACKEND_XLIB, "Use Xlib", "xlib"},
+    {0, NULL, NULL}
+  };
+
+  if (!backend_type)
+    backend_type =
+        g_enum_register_static ("GstCairoBackendType", backend_values);
+
+  return backend_type;
+}
 
 /* pad templates */
 
@@ -82,13 +110,29 @@ gst_cairo_sink_class_init (GstCairoSinkClass * klass)
 {
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
+  GstBaseSinkClass *base_sink_class = GST_BASE_SINK_CLASS (klass);
   GstVideoSinkClass *video_sink_class = GST_VIDEO_SINK_CLASS (klass);
 
   gobject_class->set_property = gst_cairo_sink_set_property;
   gobject_class->get_property = gst_cairo_sink_get_property;
   gobject_class->dispose = gst_cairo_sink_dispose;
   gobject_class->finalize = gst_cairo_sink_finalize;
+  base_sink_class->start = gst_cairo_sink_start;
+  base_sink_class->stop = gst_cairo_sink_stop;
   video_sink_class->show_frame = GST_DEBUG_FUNCPTR (gst_cairo_sink_show_frame);
+
+  g_object_class_install_property (gobject_class, PROP_CAIRO_SURFACE,
+      g_param_spec_boxed ("cairo-surface",
+          "Cairo surface where the frame is put",
+          "Cairo surface where the frame is put",
+          CAIRO_GOBJECT_TYPE_SURFACE, G_PARAM_READWRITE));
+  g_object_class_install_property (gobject_class, PROP_CAIRO_BACKEND,
+      g_param_spec_enum ("cairo-backend",
+          "Cairo backend to use",
+          "Cairo backend to use",
+          GST_CAIRO_BACKEND_TYPE,
+          GST_CAIRO_BACKEND_DEFAULT,
+          G_PARAM_READABLE | G_PARAM_CONSTRUCT_ONLY));
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_cairo_sink_sink_template));
@@ -157,4 +201,48 @@ gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf)
 {
 
   return GST_FLOW_OK;
+}
+
+static gboolean
+gst_cairo_sink_start (GstBaseSink * base_sink)
+{
+  GstCairoSink *cairosink = GST_CAIRO_SINK (base_sink);
+  /* create backend, surface (and device?) here */
+
+  /* FIXME: create rendering thread */
+
+  if (cairosink->backend == NULL)
+    cairosink->backend = gst_cairo_backend_new (cairosink->backend_type);
+
+  /* FIXME: this needs to be done in _set_caps() so that we have width & height
+   */
+  if (cairosink->surface == NULL) {
+    cairosink->surface = cairosink->backend->create_surface ();
+    if (cairosink->device)
+      cairo_device_destroy (cairosink->device);
+
+    cairosink->device =
+        cairo_device_reference (cairo_surface_get_device (cairosink->surface));
+  }
+
+  return cairosink->surface != NULL;
+}
+
+static gboolean
+gst_cairo_sink_stop (GstBaseSink * base_sink)
+{
+  if (cairosink->surface) {
+    cairo_surface_destroy (cairosink->surface);
+    cairosink->surface = NULL;
+  }
+  if (cairosink->device) {
+    cairo_device_destroy (cairosink->device);
+    cairosink->device = NULL;
+  }
+  if (cairosink->backend) {
+    gst_cairo_backend_destroy (cairosink->backend);
+    cairosink->backend = NULL;
+  }
+
+  return TRUE;
 }

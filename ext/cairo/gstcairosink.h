@@ -23,6 +23,10 @@
 
 #include <gst/video/gstvideosink.h>
 
+#include <cairo.h>
+#include <cairo-gobject.h>
+#include "gstcairobackend.h"
+
 G_BEGIN_DECLS
 
 #define GST_TYPE_CAIRO_SINK   (gst_cairo_sink_get_type())
@@ -39,6 +43,11 @@ struct _GstCairoSink
   GstVideoSink base_cairosink;
 
   GstPad *sinkpad;
+
+  GstCairoBackendType backend_type;
+  GstCairoBackend *backend;
+  cairo_device_t *device;
+  cairo_surface_t *surface;
 };
 
 struct _GstCairoSinkClass
