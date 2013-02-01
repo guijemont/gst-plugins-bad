@@ -15,6 +15,9 @@ struct _GstCairoBackend {
   cairo_surface_t *     (*create_surface)       (void);
 
   gboolean              need_own_thread;
+  GThread *             thread;
+  GMainContext *        thread_context;
+  GMainLoop *           loop;
 };
 
 enum GstCairoBackendType {
@@ -24,5 +27,7 @@ enum GstCairoBackendType {
 #define GST_CAIRO_BACKEND_LAST 2
 
 GstCairoBackend * gst_cairo_backend_new (GstCairoBackendType backend_type, int width, int height);
+void gst_cairo_backend_use_main_context (GstCairoBackend *backend, GMainContext *context);
+void gst_cairo_backend_create_thread (GstCairoBackend *backend);
 
 #endif /* _GST_CAIRO_BACKEND_H_ */
