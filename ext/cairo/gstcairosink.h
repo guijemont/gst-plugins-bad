@@ -28,13 +28,11 @@
 #include "gstcairobackend.h"
 
 G_BEGIN_DECLS
-
 #define GST_TYPE_CAIRO_SINK   (gst_cairo_sink_get_type())
 #define GST_CAIRO_SINK(obj)   (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_CAIRO_SINK,GstCairoSink))
 #define GST_CAIRO_SINK_CLASS(klass)   (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_CAIRO_SINK,GstCairoSinkClass))
 #define GST_IS_CAIRO_SINK(obj)   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_CAIRO_SINK))
 #define GST_IS_CAIRO_SINK_CLASS(obj)   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_CAIRO_SINK))
-
 typedef struct _GstCairoSink GstCairoSink;
 typedef struct _GstCairoSinkClass GstCairoSinkClass;
 
@@ -48,6 +46,7 @@ struct _GstCairoSink
   GstCairoBackend *backend;
   cairo_device_t *device;
   cairo_surface_t *surface;
+  GMainContext *main_context;
 };
 
 struct _GstCairoSinkClass
@@ -58,5 +57,4 @@ struct _GstCairoSinkClass
 GType gst_cairo_sink_get_type (void);
 
 G_END_DECLS
-
 #endif

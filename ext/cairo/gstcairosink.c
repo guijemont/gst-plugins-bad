@@ -65,7 +65,8 @@ enum
 {
   PROP_0,
   PROP_CAIRO_SURFACE,
-  PROP_CAIRO_BACKEND
+  PROP_CAIRO_BACKEND,
+  PROP_MAIN_CONTEXT
 };
 
 /* FIXME: default to xlib if GLX not available */
@@ -132,7 +133,12 @@ gst_cairo_sink_class_init (GstCairoSinkClass * klass)
           "Cairo backend to use",
           GST_CAIRO_BACKEND_TYPE,
           GST_CAIRO_BACKEND_DEFAULT,
-          G_PARAM_READABLE | G_PARAM_CONSTRUCT_ONLY));
+          G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+  g_object_class_install_property (gobject_class, PROP_MAIN_CONTEXT,
+      g_param_spec_boxed ("main-context",
+          "GMainContext to use for graphic calls",
+          "GMainContext to use for graphic calls (e.g. gl calls)",
+          G_TYPE_MAIN_CONTEXT, G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_cairo_sink_sink_template));
@@ -156,6 +162,28 @@ gst_cairo_sink_set_property (GObject * object, guint property_id,
   /* GstCairoSink *cairosink = GST_CAIRO_SINK (object); */
 
   switch (property_id) {
+    case PROP_CAIRO_SURFACE:
+    {
+      cairo_surface_t *surface = g_value_get_boxed (value);
+      if (surface)
+        cairo_surface_reference (surface);
+      if (cairosink->surface)
+        cairo_surface_destroy (cairosink->surface);
+      cairosink->surface = surface;
+      break;
+    }
+    case PROP_CAIRO_BACKEND:
+      cairosink->backend_type = g_value_get_enum (value);
+      break;
+    case PROP_MAIN_CONTEXT:
+    {
+      GMainContext *context = g_value_get_boxed (value);
+      if (context)
+        g_main_context_ref (context);
+      cairosink->main_context = context;
+      gst_cairo_backend_use_main_context (cairosink->backend, context);
+      break;
+    }
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -166,9 +194,30 @@ void
 gst_cairo_sink_get_property (GObject * object, guint property_id,
     GValue * value, GParamSpec * pspec)
 {
-  /* GstCairoSink *cairosink = GST_CAIRO_SINK (object); */
+  GstCairoSink *cairosink = GST_CAIRO_SINK (object);
 
   switch (property_id) {
+    case PROP_CAIRO_SURFACE:
+    {
+      cairo_surface_t *surface = NULL;
+      if (cairosink->surface)
+        surface = cairo_surface_reference (cairosink->surface);
+
+      g_value_set_boxed (value, surface);
+      break;
+    }
+    case PROP_CAIRO_BACKEND:
+      g_value_set_enum (value, cairosink->backend_type);
+      break;
+    case PROP_MAIN_CONTEXT:
+    {
+      GMainContext *context = NULL;
+      if (cairosink->main_context)
+        context = g_main_context_ref (cairosink->backend->thread_context);
+
+      g_value_set_boxed (value, context);
+      break;
+    }
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
