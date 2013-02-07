@@ -55,6 +55,7 @@ static void gst_cairo_sink_finalize (GObject * object);
 
 static gboolean gst_cairo_sink_start (GstBaseSink * base_sink);
 static gboolean gst_cairo_sink_stop (GstBaseSink * base_sink);
+static gboolean gst_cairo_sink_set_caps (GstBaseSink * sink, GstCaps * caps);
 
 static GstFlowReturn
 gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf);
@@ -120,6 +121,7 @@ gst_cairo_sink_class_init (GstCairoSinkClass * klass)
   gobject_class->finalize = gst_cairo_sink_finalize;
   base_sink_class->start = gst_cairo_sink_start;
   base_sink_class->stop = gst_cairo_sink_stop;
+  base_sink_class->set_caps = gst_cairo_sink_set_caps;
   video_sink_class->show_frame = GST_DEBUG_FUNCPTR (gst_cairo_sink_show_frame);
 
   g_object_class_install_property (gobject_class, PROP_CAIRO_SURFACE,
@@ -159,7 +161,7 @@ void
 gst_cairo_sink_set_property (GObject * object, guint property_id,
     const GValue * value, GParamSpec * pspec)
 {
-  /* GstCairoSink *cairosink = GST_CAIRO_SINK (object); */
+  GstCairoSink *cairosink = GST_CAIRO_SINK (object);
 
   switch (property_id) {
     case PROP_CAIRO_SURFACE:
@@ -258,23 +260,10 @@ gst_cairo_sink_start (GstBaseSink * base_sink)
   GstCairoSink *cairosink = GST_CAIRO_SINK (base_sink);
   /* create backend, surface (and device?) here */
 
-  /* FIXME: create rendering thread */
-
   if (cairosink->backend == NULL)
     cairosink->backend = gst_cairo_backend_new (cairosink->backend_type);
 
-  /* FIXME: this needs to be done in _set_caps() so that we have width & height
-   */
-  if (cairosink->surface == NULL) {
-    cairosink->surface = cairosink->backend->create_surface ();
-    if (cairosink->device)
-      cairo_device_destroy (cairosink->device);
-
-    cairosink->device =
-        cairo_device_reference (cairo_surface_get_device (cairosink->surface));
-  }
-
-  return cairosink->surface != NULL;
+  return cairosink->backend != NULL;
 }
 
 static gboolean
@@ -294,4 +283,28 @@ gst_cairo_sink_stop (GstBaseSink * base_sink)
   }
 
   return TRUE;
+}
+
+static gboolean
+gst_cairo_sink_set_caps (GstBaseSink * sink, GstCaps * caps)
+{
+  GstStructure *structure;
+  gint width, height;
+
+  structure = gst_caps_get_structure (caps, 0);
+
+  if (gst_structure_get_int (structure, "width", &width)
+      || gst_structure_get_int (structure, "height", &height))
+    return FALSE;
+
+  if (cairosink->surface == NULL) {
+    cairosink->surface = cairosink->backend->create_surface (width, height);
+    if (cairosink->device)
+      cairo_device_destroy (cairosink->device);
+
+    cairosink->device =
+        cairo_device_reference (cairo_surface_get_device (cairosink->surface));
+  }
+
+  return cairosink->surface != NULL;
 }
