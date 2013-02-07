@@ -3,7 +3,8 @@
 
 #include "gstcairobackendglx.h"
 
-static cairo_surface_t gst_cairo_backend_glx_create_surface (void);
+static cairo_surface_t gst_cairo_backend_glx_create_surface (gint width,
+    gint height);
 
 static int multisampleAttributes[] = {
   GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
@@ -61,7 +62,7 @@ get_display ()
 }
 
 /* Mostly cut and paste from glx-utils.c in cairo-gl-smoke-tests */
-static cairo_surface_t
+static cairo_surface_t *
 gst_cairo_backend_glx_create_surface (int width, int height)
 {
   Window window, root_window;
@@ -71,7 +72,7 @@ gst_cairo_backend_glx_create_surface (int width, int height)
   GLXContext glx_context GLXFBConfig *fb_configs;
 
   cairo_device_t *device;
-  cairo_surface_t surface;
+  cairo_surface_t *surface;
   int num_returned = 0;
 
   display = get_display ();

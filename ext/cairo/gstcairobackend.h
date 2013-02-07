@@ -12,7 +12,7 @@ typedef struct _GstCairoBackend GstCairoBackend;
   EGL/GLES, GLX, etc...
  */
 struct _GstCairoBackend {
-  cairo_surface_t *     (*create_surface)       (void);
+  cairo_surface_t *     (*create_surface)       (gint width, gint height);
 
   gboolean              need_own_thread;
   GThread *             thread;
@@ -26,7 +26,7 @@ enum GstCairoBackendType {
 };
 #define GST_CAIRO_BACKEND_LAST 2
 
-GstCairoBackend * gst_cairo_backend_new (GstCairoBackendType backend_type, int width, int height);
+GstCairoBackend * gst_cairo_backend_new (GstCairoBackendType backend_type, GMainContext *context);
 void gst_cairo_backend_use_main_context (GstCairoBackend *backend, GMainContext *context);
 void gst_cairo_backend_create_thread (GstCairoBackend *backend);
 

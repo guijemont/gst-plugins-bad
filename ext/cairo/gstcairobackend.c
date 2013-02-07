@@ -6,14 +6,14 @@
 static gpointer gst_cairo_backend_thread_init (gpointer data);
 
 GstCairoBackend *
-gst_cairo_backend_new (GstCairoBackendType backend_type, int width, int height)
+gst_cairo_backend_new (GstCairoBackendType backend_type)
 {
   GstCairoBackend *backend = NULL;
 
   switch (backend_type) {
 #ifdef HAVE_GLX
     case GST_CAIRO_BACKEND_GLX:
-      backend = gst_cairo_backend_glx_new (width, height);
+      backend = gst_cairo_backend_glx_new ();
       break;
 #endif
     default:
