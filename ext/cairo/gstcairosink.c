@@ -88,6 +88,25 @@ static gboolean gst_cairo_sink_set_caps (GstBaseSink * sink, GstCaps * caps);
 static GstFlowReturn
 gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf);
 
+static gpointer gst_cairo_sink_thread_init (gpointer data);
+
+static gboolean
+gst_cairo_sink_source_prepare (GSource * source, gint * timeout_);
+static gboolean gst_cairo_sink_source_check (GSource * source);
+static gboolean gst_cairo_sink_source_dispatch (GSource * source,
+    GSourceFunc callback, gpointer user_data);
+
+typedef struct
+{
+  GSource parent;
+  GstCairoSink *sink;
+} CairoCairoSinkSource;
+
+GSourceFuncs gst_cairo_sink_source_funcs = {
+  gst_cairo_sink_source_prepare,
+  gst_cairo_sink_source_check,
+  gst_cairo_sink_source_dispatch,
+};
 
 
 enum
@@ -211,7 +230,6 @@ gst_cairo_sink_set_property (GObject * object, guint property_id,
       if (context)
         g_main_context_ref (context);
       cairosink->main_context = context;
-      gst_cairo_backend_use_main_context (cairosink->backend, context);
       break;
     }
     default:
@@ -243,7 +261,7 @@ gst_cairo_sink_get_property (GObject * object, guint property_id,
     {
       GMainContext *context = NULL;
       if (cairosink->main_context)
-        context = g_main_context_ref (cairosink->backend->thread_context);
+        context = g_main_context_ref (cairosink->main_context);
 
       g_value_set_boxed (value, context);
       break;
@@ -283,16 +301,80 @@ gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf)
 }
 
 static gboolean
+queue_check_full_func (GstDataQueue * queue, guint visible, guint bytes,
+    guint64 time, gpointer checkdata)
+{
+  return visible != 0;
+}
+
+
+static gboolean
 gst_cairo_sink_start (GstBaseSink * base_sink)
 {
   GstCairoSink *cairosink = GST_CAIRO_SINK (base_sink);
-  /* create backend, surface (and device?) here */
 
   if (cairosink->backend == NULL)
     cairosink->backend = gst_cairo_backend_new (cairosink->backend_type);
 
-  return cairosink->backend != NULL;
+  if (!cairosink->backend)
+    goto error;
+
+  if (cairosink->backend->need_own_thread && !cairosink->main_context) {
+    GError *error = NULL;
+
+    cairosink->main_context = g_main_context_new ();
+    cairosink->thread =
+        g_thread_try_new ("backend thread", gst_cairo_sink_thread_init,
+        backend, &error);
+    if (!cairosink->thread) {
+      GST_ERROR ("Could not create backend thread: %s", error->message);
+      g_error_free (error);
+      goto error;
+    }
+  }
+
+  if (!cairosink->main_context)
+    goto error;
+
+  cairosink->queue =
+      gst_data_queue_new (queue_check_full_func, NULL, NULL, NULL);
+  cairosink->source =
+      g_source_new (&gst_cairo_sink_source_funcs,
+      sizeof (gst_cairo_sink_source_funcs));
+  g_source_attach (cairosink->source, cairosink->thread_context);
+
+  return TRUE;
+
+error:
+  if (cairosink->backend) {
+    gst_cairo_backend_destroy (cairosink->backend);
+    cairosink->backend = NULL;
+  }
+
+  if (cairosink->main_context) {
+    g_main_context_unref (cairosink->main_context);
+    cairosink->main_context = NULL;
+  }
+
+  if (cairosink->thread) {
+    g_thread_unref (cairosink->thread);
+    cairosink->thread = NULL;
+  }
+
+  return FALSE;
 }
+
+static gpointer
+gst_cairo_sink_thread_init (gpointer data)
+{
+  GstCairoSink *sink = GST_CAIRO_SINK (data);
+
+  g_main_context_push_thread_default (sink->thread_context);
+  sink->loop = g_main_loop_new (sink->thread_context, FALSE);
+  g_main_loop_run (sink->loop);
+  return NULL;
+}
+
 
 static gboolean
 gst_cairo_sink_stop (GstBaseSink * base_sink)
@@ -310,6 +392,31 @@ gst_cairo_sink_stop (GstBaseSink * base_sink)
     cairosink->backend = NULL;
   }
 
+
+  if (cairosink->source) {
+    g_source_destroy (cairosink->source);
+    g_source_unref (cairosink->source);
+    cairosink->source = NULL;
+  }
+
+  if (cairosink->main_context) {
+    g_main_context_unref (cairosink->main_context);
+    cairosink->main_context = NULL;
+  }
+
+  if (cairosink->loop) {
+    g_main_loop_quit (cairosink->loop);
+    g_main_loop_unref (cairosink->loop);
+    cairosink->loop = NULL;
+  }
+
+  if (cairosink->queue) {
+    gst_data_queue_set_flushing (cairosink->queue);
+    g_object_unref (cairosink->queue);
+    cairosink->queue = NULL;
+  }
+
+
   return TRUE;
 }
 
@@ -325,6 +432,8 @@ gst_cairo_sink_set_caps (GstBaseSink * sink, GstCaps * caps)
       || gst_structure_get_int (structure, "height", &height))
     return FALSE;
 
+  gst_cairo_backend_init (cairosink->backend, width, height);
+  cairosink->backend->init (width, height);
   if (cairosink->surface == NULL) {
     cairosink->surface = cairosink->backend->create_surface (width, height);
     if (cairosink->device)
@@ -335,4 +444,43 @@ gst_cairo_sink_set_caps (GstBaseSink * sink, GstCaps * caps)
   }
 
   return cairosink->surface != NULL;
+}
+
+static gboolean
+gst_cairo_sink_source_prepare (GSource * source, gint * timeout_)
+{
+  return gst_cairo_sink_source_check (source);
+}
+
+static gboolean
+gst_cairo_sink_source_check (GSource * source)
+{
+  CairoSinkSource *sink_source = (CairoSinkSource *) source;
+
+  return gst_data_queue_is_full (sink_source->sink->queue);
+}
+
+static gboolean
+gst_cairo_sink_source_dispatch (GSource * source,
+    GSourceFunc callback, gpointer user_data)
+{
+  GstDataQueueItem *item = NULL;
+  CairoSinkSource *sink_source = (CairoSinkSource *) source;
+  GstCairoSink *sink GstMiniObject * object;
+
+  sink = sink_source->sink;
+
+  if (!gst_data_queue_pop (sink->queue, &item))
+    return FALSE;
+
+  object = item->object;
+
+  if (GST_IS_CAPS (object)) {
+  } else if (GST_IS_QUERY (object)) {
+  } else if (GST_IS_BUFFER (object)) {
+  } else if (!object) {
+  }
+
+
+  return TRUE;
 }

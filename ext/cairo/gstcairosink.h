@@ -72,9 +72,11 @@ struct _GstCairoSink
 
   GstCairoBackendType backend_type;
   GstCairoBackend *backend;
-  cairo_device_t *device;
-  cairo_surface_t *surface;
   GMainContext *main_context;
+  GThread *thread;
+  GMainLoop *loop;
+  GSource *source;
+  GstDataQueue *queue;
 };
 
 struct _GstCairoSinkClass
