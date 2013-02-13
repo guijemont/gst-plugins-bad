@@ -4,7 +4,8 @@ noinst_HEADERS = \
 	gstcairosink.h
 libgstcairobad_la_SOURCES = \
 	gstcairobad.c \
-	gstcairosink.c
+	gstcairosink.c \
+	gstcairobackend.c
 if HAVE_GLX
 libgstcairobad_la_SOURCES += gstcairobackendglx.c
 endif

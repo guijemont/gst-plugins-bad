@@ -50,7 +50,7 @@
 #include "gstcairobackendglx.h"
 #endif
 
-static gpointer gst_cairo_backend_thread_init (gpointer data);
+#include <gst/gst.h>
 
 GstCairoBackend *
 gst_cairo_backend_new (GstCairoBackendType backend_type)
@@ -82,6 +82,6 @@ gst_cairo_backend_destroy (GstCairoBackend * backend)
       break;
 #endif
     default:
-      GST_ERROR ("Unhandled backend type: %d", backend_type);
+      GST_ERROR ("Unhandled backend type: %d", backend->backend_type);
   }
 }

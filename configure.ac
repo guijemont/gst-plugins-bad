@@ -1111,7 +1111,7 @@ AG_GST_CHECK_FEATURE(BZ2, [bz2 library], bz2, [
 dnl *** cairo ***
 translit(dnm, m, l) AM_CONDITIONAL(USE_CAIRO, true)
 AG_GST_CHECK_FEATURE(CAIRO, [cairo plug-in], cairo, [
-  PKG_CHECK_MODULES(CAIRO, cairo >= 1.0,  HAVE_CAIRO=yes, [
+  PKG_CHECK_MODULES(CAIRO, [cairo >= 1.0 cairo-gobject >= 1.0 ],  HAVE_CAIRO=yes, [
     HAVE_CAIRO=no
   ])
   AC_SUBST(CAIRO_CFLAGS)

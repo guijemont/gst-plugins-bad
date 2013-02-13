@@ -49,6 +49,7 @@
 #define _GST_CAIRO_BACKEND_H_
 
 #include <cairo.h>
+#include <glib.h>
 
 typedef struct _GstCairoBackend GstCairoBackend;
 
@@ -69,14 +70,14 @@ typedef enum
 struct _GstCairoBackend
 {
   cairo_surface_t *     (*create_surface)       (gint width, gint height);
-  void                  (*get_size)             (cairo_surface_t surface,
+  void                  (*get_size)             (cairo_surface_t *surface,
           gint *width, gint *height);
 
   GstCairoBackendType backend_type;
   gboolean need_own_thread;
 };
 
-GstCairoBackend *gst_cairo_backend_new (GstCairoBackendType backend_type,
-    GMainContext * context);
+GstCairoBackend *gst_cairo_backend_new (GstCairoBackendType backend_type);
+void gst_cairo_backend_destroy (GstCairoBackend * backend);
 
 #endif /* _GST_CAIRO_BACKEND_H_ */

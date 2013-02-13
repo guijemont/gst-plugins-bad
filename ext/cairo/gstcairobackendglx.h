@@ -3,7 +3,7 @@
 
 #include "gstcairobackend.h"
 
-GstCairoBackend *gst_cairo_backend_glx_new ();
+GstCairoBackend *gst_cairo_backend_glx_new (void);
 
 void gst_cairo_backend_glx_destroy (GstCairoBackend *backend);
 

@@ -70,6 +70,7 @@
 
 #include <cairo-gl.h>
 
+GST_DEBUG_CATEGORY_STATIC (gst_cairo_sink_debug_category);
 #define GST_CAT_DEFAULT gst_cairo_sink_debug_category
 
 /* prototypes */
@@ -90,6 +91,10 @@ gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf);
 
 static gpointer gst_cairo_sink_thread_init (gpointer data);
 
+static GstFlowReturn
+gst_cairo_sink_sync_render_operation (GstCairoSink * cairosink,
+    GstMiniObject * operation);
+
 static gboolean
 gst_cairo_sink_source_prepare (GSource * source, gint * timeout_);
 static gboolean gst_cairo_sink_source_check (GSource * source);
@@ -100,7 +105,7 @@ typedef struct
 {
   GSource parent;
   GstCairoSink *sink;
-} CairoCairoSinkSource;
+} CairoSinkSource;
 
 GSourceFuncs gst_cairo_sink_source_funcs = {
   gst_cairo_sink_source_prepare,
@@ -367,11 +372,11 @@ error:
 static gpointer
 gst_cairo_sink_thread_init (gpointer data)
 {
-  GstCairoSink *sink = GST_CAIRO_SINK (data);
+  GstCairoSink *cairosink = GST_CAIRO_SINK (data);
 
-  g_main_context_push_thread_default (sink->render_main_context);
-  sink->loop = g_main_loop_new (sink->render_main_context, FALSE);
-  g_main_loop_run (sink->loop);
+  g_main_context_push_thread_default (cairosink->render_main_context);
+  cairosink->loop = g_main_loop_new (cairosink->render_main_context, FALSE);
+  g_main_loop_run (cairosink->loop);
   return NULL;
 }
 
@@ -379,6 +384,8 @@ gst_cairo_sink_thread_init (gpointer data)
 static gboolean
 gst_cairo_sink_stop (GstBaseSink * base_sink)
 {
+  GstCairoSink *cairosink = GST_CAIRO_SINK (base_sink);
+
   if (cairosink->surface) {
     cairo_surface_destroy (cairosink->surface);
     cairosink->surface = NULL;
@@ -411,7 +418,7 @@ gst_cairo_sink_stop (GstBaseSink * base_sink)
   }
 
   if (cairosink->queue) {
-    gst_data_queue_set_flushing (cairosink->queue);
+    gst_data_queue_set_flushing (cairosink->queue, TRUE);
     g_object_unref (cairosink->queue);
     cairosink->queue = NULL;
   }
@@ -421,17 +428,21 @@ gst_cairo_sink_stop (GstBaseSink * base_sink)
 }
 
 static gboolean
-gst_cairo_sink_set_caps (GstBaseSink * sink, GstCaps * caps)
+gst_cairo_sink_set_caps (GstBaseSink * base_sink, GstCaps * caps)
 {
+  GstCairoSink *cairosink = GST_CAIRO_SINK (base_sink);
   GstStructure *structure;
   gint width, height;
-  GstFlowReturn *ret structure = gst_caps_get_structure (caps, 0);
+  GstFlowReturn ret;
+
+  structure = gst_caps_get_structure (caps, 0);
 
   if (gst_structure_get_int (structure, "width", &width)
       || gst_structure_get_int (structure, "height", &height))
     return FALSE;
 
-  ret = gst_cairo_sink_sync_render_operation (cairosink, caps);
+  ret = gst_cairo_sink_sync_render_operation (cairosink,
+      GST_MINI_OBJECT_CAST (caps));
 
   return cairosink->surface != NULL && ret == GST_FLOW_OK;
 }
@@ -532,6 +543,7 @@ gst_cairo_sink_sync_render_operation (GstCairoSink * cairosink,
   /* item is on the stack, should be OK since we wait for the other thread to
    * finish handling it */
   GstDataQueueItem *item;
+  GstFlowReturn last_ret;
 
   item = g_slice_new0 (GstDataQueueItem);
 

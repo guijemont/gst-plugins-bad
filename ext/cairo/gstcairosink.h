@@ -50,6 +50,7 @@
 #define _GST_CAIRO_SINK_H_
 
 #include <gst/video/gstvideosink.h>
+#include <gst/base/gstdataqueue.h>
 
 #include <cairo.h>
 #include <cairo-gobject.h>
@@ -81,6 +82,7 @@ struct _GstCairoSink
   GMutex render_mutex;
   GCond render_cond;
   cairo_surface_t *surface;
+  cairo_device_t *device;
   GstBuffer *buf;
   GstFlowReturn last_ret;
   GstMiniObject *last_finished_operation;

@@ -1,9 +1,12 @@
 #include <GL/gl.h>
 #include <GL/glx.h>
 
-#include "gstcairobackendglx.h"
+#include <cairo-gl.h>
 
-static cairo_surface_t gst_cairo_backend_glx_create_surface (gint width,
+#include "gstcairobackendglx.h"
+#include <gst/gst.h>
+
+static cairo_surface_t *gst_cairo_backend_glx_create_surface (gint width,
     gint height);
 
 static int multisampleAttributes[] = {
@@ -30,6 +33,7 @@ static int singleSampleAttributes[] = {
   None
 };
 
+GstCairoBackend *
 gst_cairo_backend_glx_new (void)
 {
   GstCairoBackend *backend = g_slice_new (GstCairoBackend);
@@ -47,7 +51,7 @@ gst_cairo_backend_glx_destroy (GstCairoBackend * backend)
 }
 
 static Display *
-get_display ()
+get_display (void)
 {
   static Display *display = NULL;
   if (display)
@@ -55,10 +59,16 @@ get_display ()
 
   display = XOpenDisplay (NULL);
   if (!display) {
-    fprintf (stderr, "Could not open display.");
-    exit (EXIT_FAILURE);
+    GST_ERROR ("Could not open display.");
+    return NULL;
   }
   return display;
+}
+
+static Bool
+waitForNotify (Display * dpy, XEvent * event, XPointer arg)
+{
+  return (event->type == MapNotify) && (event->xmap.window == (Window) arg);
 }
 
 /* Mostly cut and paste from glx-utils.c in cairo-gl-smoke-tests */
@@ -69,13 +79,17 @@ gst_cairo_backend_glx_create_surface (int width, int height)
   Display *display;
   XVisualInfo *visual_info;
   XSetWindowAttributes window_attributes;
-  GLXContext glx_context GLXFBConfig *fb_configs;
+  XEvent event;
+  GLXContext glx_context;
+  GLXFBConfig *fb_configs;
 
   cairo_device_t *device;
   cairo_surface_t *surface;
   int num_returned = 0;
 
   display = get_display ();
+  if (!display)
+    return NULL;
 
   fb_configs =
       glXChooseFBConfig (display, DefaultScreen (display),
@@ -87,8 +101,9 @@ gst_cairo_backend_glx_create_surface (int width, int height)
   }
 
   if (fb_configs == NULL) {
-    printf ("Unable to create a GL context with appropriate attributes.\n");
-    exit (EXIT_FAILURE);
+    GST_ERROR ("Unable to create a GL context with appropriate attributes.");
+    /* FIXME: leak? */
+    return NULL;
   }
 
   visual_info = glXGetVisualFromFBConfig (display, fb_configs[0]);
@@ -105,11 +120,10 @@ gst_cairo_backend_glx_create_surface (int width, int height)
       CWBorderPixel | CWColormap | CWEventMask, &window_attributes);
 
   /* Create a GLX context for OpenGL rendering */
-  GLXContext glx_context =
+  glx_context =
       glXCreateNewContext (display, fb_configs[0], GLX_RGBA_TYPE, NULL, True);
 
   /* Map the window to the screen, and wait for it to appear */
-  XEvent event;
   XMapWindow (get_display (), window);
   XIfEvent (get_display (), &event, waitForNotify, (XPointer) window);
 
