@@ -68,7 +68,9 @@ typedef enum
 
 struct _GstCairoBackend
 {
-  cairo_surface_t *(*create_surface) (gint width, gint height);
+  cairo_surface_t *     (*create_surface)       (gint width, gint height);
+  void                  (*get_size)             (cairo_surface_t surface,
+          gint *width, gint *height);
 
   GstCairoBackendType backend_type;
   gboolean need_own_thread;

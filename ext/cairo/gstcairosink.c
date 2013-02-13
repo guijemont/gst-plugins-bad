@@ -229,7 +229,7 @@ gst_cairo_sink_set_property (GObject * object, guint property_id,
       GMainContext *context = g_value_get_boxed (value);
       if (context)
         g_main_context_ref (context);
-      cairosink->main_context = context;
+      cairosink->render_main_context = context;
       break;
     }
     default:
@@ -260,8 +260,8 @@ gst_cairo_sink_get_property (GObject * object, guint property_id,
     case PROP_MAIN_CONTEXT:
     {
       GMainContext *context = NULL;
-      if (cairosink->main_context)
-        context = g_main_context_ref (cairosink->main_context);
+      if (cairosink->render_main_context)
+        context = g_main_context_ref (cairosink->render_main_context);
 
       g_value_set_boxed (value, context);
       break;
@@ -319,21 +319,21 @@ gst_cairo_sink_start (GstBaseSink * base_sink)
   if (!cairosink->backend)
     goto error;
 
-  if (cairosink->backend->need_own_thread && !cairosink->main_context) {
+  if (cairosink->backend->need_own_thread && !cairosink->render_main_context) {
     GError *error = NULL;
 
-    cairosink->main_context = g_main_context_new ();
+    cairosink->render_main_context = g_main_context_new ();
     cairosink->thread =
         g_thread_try_new ("backend thread", gst_cairo_sink_thread_init,
-        backend, &error);
+        cairosink, &error);
     if (!cairosink->thread) {
-      GST_ERROR ("Could not create backend thread: %s", error->message);
+      GST_ERROR ("Could not create rendering thread: %s", error->message);
       g_error_free (error);
       goto error;
     }
   }
 
-  if (!cairosink->main_context)
+  if (!cairosink->render_main_context)
     goto error;
 
   cairosink->queue =
@@ -341,7 +341,7 @@ gst_cairo_sink_start (GstBaseSink * base_sink)
   cairosink->source =
       g_source_new (&gst_cairo_sink_source_funcs,
       sizeof (gst_cairo_sink_source_funcs));
-  g_source_attach (cairosink->source, cairosink->thread_context);
+  g_source_attach (cairosink->source, cairosink->render_main_context);
 
   return TRUE;
 
@@ -351,9 +351,9 @@ error:
     cairosink->backend = NULL;
   }
 
-  if (cairosink->main_context) {
-    g_main_context_unref (cairosink->main_context);
-    cairosink->main_context = NULL;
+  if (cairosink->render_main_context) {
+    g_main_context_unref (cairosink->render_main_context);
+    cairosink->render_main_context = NULL;
   }
 
   if (cairosink->thread) {
@@ -369,8 +369,8 @@ gst_cairo_sink_thread_init (gpointer data)
 {
   GstCairoSink *sink = GST_CAIRO_SINK (data);
 
-  g_main_context_push_thread_default (sink->thread_context);
-  sink->loop = g_main_loop_new (sink->thread_context, FALSE);
+  g_main_context_push_thread_default (sink->render_main_context);
+  sink->loop = g_main_loop_new (sink->render_main_context, FALSE);
   g_main_loop_run (sink->loop);
   return NULL;
 }
@@ -399,9 +399,9 @@ gst_cairo_sink_stop (GstBaseSink * base_sink)
     cairosink->source = NULL;
   }
 
-  if (cairosink->main_context) {
-    g_main_context_unref (cairosink->main_context);
-    cairosink->main_context = NULL;
+  if (cairosink->render_main_context) {
+    g_main_context_unref (cairosink->render_main_context);
+    cairosink->render_main_context = NULL;
   }
 
   if (cairosink->loop) {
@@ -425,25 +425,15 @@ gst_cairo_sink_set_caps (GstBaseSink * sink, GstCaps * caps)
 {
   GstStructure *structure;
   gint width, height;
-
-  structure = gst_caps_get_structure (caps, 0);
+  GstFlowReturn *ret structure = gst_caps_get_structure (caps, 0);
 
   if (gst_structure_get_int (structure, "width", &width)
       || gst_structure_get_int (structure, "height", &height))
     return FALSE;
 
-  gst_cairo_backend_init (cairosink->backend, width, height);
-  cairosink->backend->init (width, height);
-  if (cairosink->surface == NULL) {
-    cairosink->surface = cairosink->backend->create_surface (width, height);
-    if (cairosink->device)
-      cairo_device_destroy (cairosink->device);
+  ret = gst_cairo_sink_sync_render_operation (cairosink, caps);
 
-    cairosink->device =
-        cairo_device_reference (cairo_surface_get_device (cairosink->surface));
-  }
-
-  return cairosink->surface != NULL;
+  return cairosink->surface != NULL && ret == GST_FLOW_OK;
 }
 
 static gboolean
@@ -466,16 +456,48 @@ gst_cairo_sink_source_dispatch (GSource * source,
 {
   GstDataQueueItem *item = NULL;
   CairoSinkSource *sink_source = (CairoSinkSource *) source;
-  GstCairoSink *sink GstMiniObject * object;
+  GstCairoSink *cairosink;
+  GstMiniObject *object;
 
-  sink = sink_source->sink;
+  cairosink = sink_source->sink;
 
-  if (!gst_data_queue_pop (sink->queue, &item))
+  if (!gst_data_queue_pop (cairosink->queue, &item))
     return FALSE;
 
   object = item->object;
 
   if (GST_IS_CAPS (object)) {
+    GstCaps *caps = GST_CAPS_CAST (object);
+    GstStructure *structure;
+    gint caps_width, caps_height;
+    gboolean need_new_surface = cairosink->surface != NULL;;
+    structure = gst_caps_get_structure (caps, 0);
+    gst_structure_get_int (structure, "width", &caps_width);
+    gst_structure_get_int (structure, "height", &caps_height);
+
+    if (cairosink->surface) {
+      gint surface_width, surface_height;
+      cairosink->backend->get_size (cairosink->surface, &surface_width,
+          &surface_height);
+      need_new_surface = caps_width != surface_width
+          || caps_height != surface_height;
+    }
+
+    if (need_new_surface) {
+      if (cairosink->surface)
+        cairo_surface_destroy (cairosink->surface);
+
+      cairosink->surface =
+          cairosink->backend->create_surface (caps_width, caps_height);
+    }
+
+    if (cairosink->surface) {
+      cairosink->last_ret = GST_FLOW_OK;
+    } else {
+      GST_ERROR_OBJECT (cairosink, "No surface!");
+      cairosink->last_ret = GST_FLOW_ERROR;
+    }
+
   } else if (GST_IS_QUERY (object)) {
   } else if (GST_IS_BUFFER (object)) {
   } else if (!object) {
@@ -483,4 +505,60 @@ gst_cairo_sink_source_dispatch (GSource * source,
 
 
   return TRUE;
+}
+
+static void
+gst_cairo_sink_queue_item_destroy (gpointer data)
+{
+  GstDataQueueItem *item = (GstDataQueueItem *) data;
+  if (item->object)
+    gst_mini_object_unref (item->object);
+
+  g_slice_free (GstDataQueueItem, item);
+}
+
+/* Sends an operation to the rendering thread and wait for it to be handled.
+ * Operation can be one of:
+  - NULL: do a rendering of the last buffer sent
+  - a GstCaps: try to use as new caps and, if needed, create a new surface
+  - a GstBuffer to upload for future rendering
+  - a GstQuery with a special operation?
+ */
+static GstFlowReturn
+gst_cairo_sink_sync_render_operation (GstCairoSink * cairosink,
+    GstMiniObject * operation)
+{
+  /* FIXME: should be on the heap for compatibility with the async case */
+  /* item is on the stack, should be OK since we wait for the other thread to
+   * finish handling it */
+  GstDataQueueItem *item;
+
+  item = g_slice_new0 (GstDataQueueItem);
+
+  if (operation == NULL) {
+    item->object = NULL;
+  } else {
+    item->object = gst_mini_object_ref (operation);
+  }
+
+  item->duration = GST_CLOCK_TIME_NONE;
+  item->destroy = gst_cairo_sink_queue_item_destroy;
+
+  g_mutex_lock (&cairosink->render_mutex);
+  {
+    if (!gst_data_queue_push (cairosink->queue, item)) {
+      gst_cairo_sink_queue_item_destroy (item);
+      g_mutex_unlock (&cairosink->render_mutex);
+      return GST_FLOW_FLUSHING;
+    }
+
+    do {
+      g_cond_wait (&cairosink->render_cond, &cairosink->render_mutex);
+    } while (cairosink->last_finished_operation != operation);
+
+    last_ret = cairosink->last_ret;
+  }
+  g_mutex_unlock (&cairosink->render_mutex);
+
+  return last_ret;
 }
