@@ -379,6 +379,7 @@ gst_cairo_sink_thread_init (gpointer data)
 {
   GstCairoSink *cairosink = GST_CAIRO_SINK (data);
 
+  GST_TRACE_OBJECT (cairosink, "Hi from new thread");
   g_main_context_push_thread_default (cairosink->render_main_context);
   cairosink->loop = g_main_loop_new (cairosink->render_main_context, FALSE);
   g_main_loop_run (cairosink->loop);
@@ -440,6 +441,7 @@ gst_cairo_sink_set_caps (GstBaseSink * base_sink, GstCaps * caps)
   gint width, height;
   GstFlowReturn ret;
 
+  GST_TRACE_OBJECT (cairosink, "set_caps(%" GST_PTR_FORMAT ")", caps);
   structure = gst_caps_get_structure (caps, 0);
 
   if (!gst_structure_get_int (structure, "width", &width)
@@ -455,6 +457,8 @@ gst_cairo_sink_set_caps (GstBaseSink * base_sink, GstCaps * caps)
 static gboolean
 gst_cairo_sink_source_prepare (GSource * source, gint * timeout_)
 {
+  CairoSinkSource *sink_source = (CairoSinkSource *) source;
+  GST_TRACE_OBJECT (sink_source->sink, "prepare");
   return gst_cairo_sink_source_check (source);
 }
 
@@ -462,8 +466,13 @@ static gboolean
 gst_cairo_sink_source_check (GSource * source)
 {
   CairoSinkSource *sink_source = (CairoSinkSource *) source;
+  gboolean ret;
 
-  return gst_data_queue_is_full (sink_source->sink->queue);
+  ret = gst_data_queue_is_full (sink_source->sink->queue);
+
+  GST_TRACE_OBJECT (sink_source->sink, "returning %s", ret ? "TRUE" : "FALSE");
+
+  return ret;
 }
 
 static gboolean
@@ -477,6 +486,8 @@ gst_cairo_sink_source_dispatch (GSource * source,
 
   cairosink = sink_source->sink;
 
+  GST_TRACE_OBJECT (cairosink, "dispatch");
+
   if (!gst_data_queue_pop (cairosink->queue, &item))
     return FALSE;
 
@@ -487,6 +498,9 @@ gst_cairo_sink_source_dispatch (GSource * source,
     GstStructure *structure;
     gint caps_width, caps_height;
     gboolean need_new_surface = cairosink->surface != NULL;;
+
+    GST_TRACE_OBJECT (cairosink, "got new caps");
+
     structure = gst_caps_get_structure (caps, 0);
     gst_structure_get_int (structure, "width", &caps_width);
     gst_structure_get_int (structure, "height", &caps_height);
@@ -550,6 +564,8 @@ gst_cairo_sink_sync_render_operation (GstCairoSink * cairosink,
   GstDataQueueItem *item;
   GstFlowReturn last_ret;
 
+  GST_TRACE_OBJECT (cairosink,
+      "about to send operation %" GST_PTR_FORMAT " to render thread");
   item = g_slice_new0 (GstDataQueueItem);
 
   if (operation == NULL) {
@@ -564,17 +580,23 @@ gst_cairo_sink_sync_render_operation (GstCairoSink * cairosink,
 
   g_mutex_lock (&cairosink->render_mutex);
   {
+    GST_TRACE_OBJECT (cairosink, "Got lock, pushing on queue");
     if (!gst_data_queue_push (cairosink->queue, item)) {
+      GST_DEBUG_OBJECT (cairosink,
+          "Could not push on queue, returning that we are flushing");
       gst_cairo_sink_queue_item_destroy (item);
       g_mutex_unlock (&cairosink->render_mutex);
       return GST_FLOW_FLUSHING;
     }
+    GST_TRACE_OBJECT (cairosink, "pushed item on queue");
 
     g_main_context_wakeup (cairosink->render_main_context);
 
     do {
+      GST_TRACE_OBJECT (cairosink, "waiting for cond");
       g_cond_wait (&cairosink->render_cond, &cairosink->render_mutex);
     } while (cairosink->last_finished_operation != operation);
+    GST_TRACE_OBJECT (cairosink, "got cond");
 
     last_ret = cairosink->last_ret;
   }
