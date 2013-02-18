@@ -157,7 +157,7 @@ GST_STATIC_PAD_TEMPLATE ("sink",
 /* class initialization */
 
 #define parent_class gst_cairo_sink_parent_class
-G_DEFINE_TYPE (GstCairoSink, gst_cairo_sink, GST_TYPE_CAIRO_SINK);
+G_DEFINE_TYPE (GstCairoSink, gst_cairo_sink, GST_TYPE_VIDEO_SINK);
 
 static void
 gst_cairo_sink_class_init (GstCairoSinkClass * klass)
