@@ -46,6 +46,7 @@
  * Boston, MA 02110-1301, USA.
  */
 #include "gstcairobackend.h"
+#include "config.h"
 #ifdef HAVE_GLX
 #include "gstcairobackendglx.h"
 #endif
