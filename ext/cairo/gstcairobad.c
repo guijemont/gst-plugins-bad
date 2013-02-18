@@ -32,7 +32,7 @@ GST_DEBUG_CATEGORY (gst_cairo_sink_debug_category);
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
-  gst_element_register (plugin, "cairoosink", GST_RANK_NONE,
+  gst_element_register (plugin, "cairosink", GST_RANK_NONE,
       GST_TYPE_CAIRO_SINK);
 
   GST_DEBUG_CATEGORY_INIT (gst_cairo_sink_debug_category, "cairosink", 0,
