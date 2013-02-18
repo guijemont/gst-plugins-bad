@@ -27,7 +27,7 @@
 #include <string.h>
 #include <math.h>
 
-GST_DEBUG_CATEGORY (gst_cairo_sink_debug_category);
+GST_DEBUG_CATEGORY_EXTERN (gst_cairo_sink_debug_category);
 
 static gboolean
 plugin_init (GstPlugin * plugin)
