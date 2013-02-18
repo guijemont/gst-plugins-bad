@@ -560,6 +560,7 @@ gst_cairo_sink_sync_render_operation (GstCairoSink * cairosink,
 
   item->duration = GST_CLOCK_TIME_NONE;
   item->destroy = gst_cairo_sink_queue_item_destroy;
+  item->visible = TRUE;
 
   g_mutex_lock (&cairosink->render_mutex);
   {
@@ -568,6 +569,8 @@ gst_cairo_sink_sync_render_operation (GstCairoSink * cairosink,
       g_mutex_unlock (&cairosink->render_mutex);
       return GST_FLOW_FLUSHING;
     }
+
+    g_main_context_wakeup (cairosink->render_main_context);
 
     do {
       g_cond_wait (&cairosink->render_cond, &cairosink->render_mutex);
