@@ -442,8 +442,8 @@ gst_cairo_sink_set_caps (GstBaseSink * base_sink, GstCaps * caps)
 
   structure = gst_caps_get_structure (caps, 0);
 
-  if (gst_structure_get_int (structure, "width", &width)
-      || gst_structure_get_int (structure, "height", &height))
+  if (!gst_structure_get_int (structure, "width", &width)
+      || !gst_structure_get_int (structure, "height", &height))
     return FALSE;
 
   ret = gst_cairo_sink_sync_render_operation (cairosink,
