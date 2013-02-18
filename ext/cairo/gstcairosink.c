@@ -344,8 +344,13 @@ gst_cairo_sink_start (GstBaseSink * base_sink)
   cairosink->queue =
       gst_data_queue_new (queue_check_full_func, NULL, NULL, NULL);
   cairosink->source =
-      g_source_new (&gst_cairo_sink_source_funcs,
-      sizeof (gst_cairo_sink_source_funcs));
+      g_source_new (&gst_cairo_sink_source_funcs, sizeof (CairoSinkSource));
+  if (!cairosink->source)
+    goto error;
+
+  /* We don't take a ref here because source lives at most from _start() to
+   * _stop(), and cairosink is guaranteed to exist then */
+  ((CairoSinkSource *) cairosink->source)->sink = cairosink;
   g_source_attach (cairosink->source, cairosink->render_main_context);
 
   return TRUE;
