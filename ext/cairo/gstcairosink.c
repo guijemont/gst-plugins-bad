@@ -497,7 +497,10 @@ gst_cairo_sink_source_dispatch (GSource * source,
     GstCaps *caps = GST_CAPS_CAST (object);
     GstStructure *structure;
     gint caps_width, caps_height;
-    gboolean need_new_surface = cairosink->surface != NULL;;
+    gboolean need_new_surface;
+
+    g_mutex_lock (&cairosink->render_mutex);
+    need_new_surface = cairosink->surface == NULL;
 
     GST_TRACE_OBJECT (cairosink, "got new caps");
 
@@ -517,6 +520,7 @@ gst_cairo_sink_source_dispatch (GSource * source,
       if (cairosink->surface)
         cairo_surface_destroy (cairosink->surface);
 
+      GST_TRACE_OBJECT (cairosink, "creating surface");
       cairosink->surface =
           cairosink->backend->create_surface (caps_width, caps_height);
     }
@@ -527,6 +531,9 @@ gst_cairo_sink_source_dispatch (GSource * source,
       GST_ERROR_OBJECT (cairosink, "No surface!");
       cairosink->last_ret = GST_FLOW_ERROR;
     }
+    cairosink->last_finished_operation = object;
+    g_cond_signal (&cairosink->render_cond);
+    g_mutex_unlock (&cairosink->render_mutex);
 
   } else if (GST_IS_QUERY (object)) {
   } else if (GST_IS_BUFFER (object)) {
@@ -601,6 +608,8 @@ gst_cairo_sink_sync_render_operation (GstCairoSink * cairosink,
     last_ret = cairosink->last_ret;
   }
   g_mutex_unlock (&cairosink->render_mutex);
+
+  GST_TRACE_OBJECT (cairosink, "returning %s", gst_flow_get_name (last_ret));
 
   return last_ret;
 }
