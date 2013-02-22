@@ -70,6 +70,7 @@ struct _GstCairoSink
   GstVideoSink base_cairosink;
 
   GstPad *sinkpad;
+  GstCaps *caps;
 
   GstCairoBackendType backend_type;
   GstCairoBackend *backend;

@@ -39,6 +39,7 @@ gst_cairo_backend_glx_new (void)
   GstCairoBackend *backend = g_slice_new (GstCairoBackend);
 
   backend->create_surface = gst_cairo_backend_glx_create_surface;
+  backend->show = cairo_gl_surface_swapbuffers;
   backend->need_own_thread = TRUE;
 
   return backend;

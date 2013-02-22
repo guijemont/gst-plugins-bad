@@ -72,6 +72,7 @@ struct _GstCairoBackend
   cairo_surface_t *     (*create_surface)       (gint width, gint height);
   void                  (*get_size)             (cairo_surface_t *surface,
           gint *width, gint *height);
+  void                  (*show)                 (cairo_surface_t *surface);
 
   GstCairoBackendType backend_type;
   gboolean need_own_thread;

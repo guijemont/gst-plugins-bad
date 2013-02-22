@@ -85,6 +85,8 @@ static void gst_cairo_sink_finalize (GObject * object);
 static gboolean gst_cairo_sink_start (GstBaseSink * base_sink);
 static gboolean gst_cairo_sink_stop (GstBaseSink * base_sink);
 static gboolean gst_cairo_sink_set_caps (GstBaseSink * sink, GstCaps * caps);
+static GstFlowReturn
+gst_cairo_sink_prepare (GstBaseSink * base_sink, GstBuffer * buf);
 
 static GstFlowReturn
 gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf);
@@ -174,6 +176,7 @@ gst_cairo_sink_class_init (GstCairoSinkClass * klass)
   base_sink_class->start = gst_cairo_sink_start;
   base_sink_class->stop = gst_cairo_sink_stop;
   base_sink_class->set_caps = gst_cairo_sink_set_caps;
+  base_sink_class->prepare = gst_cairo_sink_prepare;
   video_sink_class->show_frame = GST_DEBUG_FUNCPTR (gst_cairo_sink_show_frame);
 
   g_object_class_install_property (gobject_class, PROP_CAIRO_SURFACE,
@@ -297,12 +300,27 @@ gst_cairo_sink_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
+static GstFlowReturn
+gst_cairo_sink_prepare (GstBaseSink * base_sink, GstBuffer * buf)
+{
+  GstCairoSink *cairosink = GST_CAIRO_SINK (base_sink);
+  GST_TRACE_OBJECT (cairosink, "Got buffer %" GST_PTR_FORMAT, buf);
+
+  return gst_cairo_sink_sync_render_operation (cairosink,
+      GST_MINI_OBJECT_CAST (buf));
+}
 
 static GstFlowReturn
 gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf)
 {
+  GstCairoSink *cairosink = GST_CAIRO_SINK (video_sink);
+  GstFlowReturn ret;
+  GST_TRACE_OBJECT (video_sink, "Need to show buffer %" GST_PTR_FORMAT, buf);
 
-  return GST_FLOW_OK;
+  ret = gst_cairo_sink_sync_render_operation (cairosink, NULL);
+  gst_buffer_unref (buf);
+
+  return ret;
 }
 
 static gboolean
@@ -475,6 +493,62 @@ gst_cairo_sink_source_check (GSource * source)
   return ret;
 }
 
+static GstFlowReturn
+upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
+{
+  GstStructure *structure;
+  GstMemory *mem;
+  GstMapInfo map_info;
+  gint width, height;
+
+  if (!cairosink->caps)
+    return GST_FLOW_NOT_NEGOTIATED;
+
+  structure = gst_caps_get_structure (cairosink->caps, 0);
+  gst_structure_get_int (structure, "width", &width);
+  gst_structure_get_int (structure, "height", &height);
+
+  if (gst_buffer_n_memory (buf) != 1) {
+    GST_ERROR_OBJECT (cairosink, "Handling of buffer with more than one "
+        "GstMemory not implemented");
+    return GST_FLOW_ERROR;
+  }
+
+  mem = gst_buffer_peek_memory (buf, 0);
+
+  if (gst_memory_map (mem, &map_info, GST_MAP_READ)) {
+    /* FIXME: should we recreate the context every time or save it and reuse
+     * it? */
+    cairo_surface_t *source;
+    cairo_t *context;
+    gint stride = cairo_format_stride_for_width (CAIRO_FORMAT_RGB24, width);
+
+    if (stride * height > map_info.size) {
+      GST_ERROR_OBJECT (cairosink, "Incompatible stride? width:%d height:%d "
+          "expected stride: %d expected size: %d actual size: %d",
+          width, height, stride, stride * height, map_info.size);
+      gst_memory_unmap (mem, &map_info);
+      return GST_FLOW_ERROR;
+    }
+
+    source = cairo_image_surface_create_for_data (map_info.data,
+        CAIRO_FORMAT_RGB24, width, height, stride);
+
+    context = cairo_create (cairosink->surface);
+    cairo_set_source_surface (context, source, 0, 0);
+    cairo_paint (context);
+    cairo_destroy (context);
+
+    cairo_surface_destroy (source);
+    gst_memory_unmap (mem, &map_info);
+  } else {
+    GST_ERROR_OBJECT (cairosink, "Could not map memory for reading");
+    return GST_FLOW_ERROR;
+  }
+
+  return GST_FLOW_OK;
+}
+
 static gboolean
 gst_cairo_sink_source_dispatch (GSource * source,
     GSourceFunc callback, gpointer user_data)
@@ -493,13 +567,13 @@ gst_cairo_sink_source_dispatch (GSource * source,
 
   object = item->object;
 
+  g_mutex_lock (&cairosink->render_mutex);
   if (GST_IS_CAPS (object)) {
     GstCaps *caps = GST_CAPS_CAST (object);
     GstStructure *structure;
     gint caps_width, caps_height;
     gboolean need_new_surface;
 
-    g_mutex_lock (&cairosink->render_mutex);
     need_new_surface = cairosink->surface == NULL;
 
     GST_TRACE_OBJECT (cairosink, "got new caps");
@@ -527,19 +601,26 @@ gst_cairo_sink_source_dispatch (GSource * source,
 
     if (cairosink->surface) {
       cairosink->last_ret = GST_FLOW_OK;
+      cairosink->caps = gst_caps_ref (caps);
     } else {
       GST_ERROR_OBJECT (cairosink, "No surface!");
       cairosink->last_ret = GST_FLOW_ERROR;
     }
-    cairosink->last_finished_operation = object;
-    g_cond_signal (&cairosink->render_cond);
-    g_mutex_unlock (&cairosink->render_mutex);
 
   } else if (GST_IS_QUERY (object)) {
   } else if (GST_IS_BUFFER (object)) {
+    GstBuffer *buf = GST_BUFFER_CAST (object);
+
+    cairosink->last_ret = upload_buffer (cairosink, buf);
+
   } else if (!object) {
+    cairosink->backend->show (cairosink->surface);
+    cairo_gl_surface_swapbuffers (cairosink->surface);
   }
 
+  cairosink->last_finished_operation = object;
+  g_cond_signal (&cairosink->render_cond);
+  g_mutex_unlock (&cairosink->render_mutex);
 
   return TRUE;
 }
@@ -572,7 +653,8 @@ gst_cairo_sink_sync_render_operation (GstCairoSink * cairosink,
   GstFlowReturn last_ret;
 
   GST_TRACE_OBJECT (cairosink,
-      "about to send operation %" GST_PTR_FORMAT " to render thread");
+      "about to send operation %" GST_PTR_FORMAT " to render thread",
+      operation);
   item = g_slice_new0 (GstDataQueueItem);
 
   if (operation == NULL) {
