@@ -84,7 +84,6 @@ struct _GstCairoSink
   GCond render_cond;
   cairo_surface_t *surface;
   cairo_device_t *device;
-  GstBuffer *buf;
   GstFlowReturn last_ret;
   GstMiniObject *last_finished_operation;
 };
