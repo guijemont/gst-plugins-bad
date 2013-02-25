@@ -541,6 +541,7 @@ upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
 
     cairo_surface_destroy (source);
     gst_memory_unmap (mem, &map_info);
+    GST_TRACE_OBJECT (cairosink, "Uploaded buffer %" GST_PTR_FORMAT, buf);
   } else {
     GST_ERROR_OBJECT (cairosink, "Could not map memory for reading");
     return GST_FLOW_ERROR;
