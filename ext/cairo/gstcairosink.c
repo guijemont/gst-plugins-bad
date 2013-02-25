@@ -571,33 +571,30 @@ gst_cairo_sink_source_dispatch (GSource * source,
   g_mutex_lock (&cairosink->render_mutex);
   if (GST_IS_CAPS (object)) {
     GstCaps *caps = GST_CAPS_CAST (object);
-    GstStructure *structure;
-    gint caps_width, caps_height;
     gboolean need_new_surface;
 
-    need_new_surface = cairosink->surface == NULL;
 
     GST_TRACE_OBJECT (cairosink, "got new caps");
 
-    structure = gst_caps_get_structure (caps, 0);
-    gst_structure_get_int (structure, "width", &caps_width);
-    gst_structure_get_int (structure, "height", &caps_height);
-
-    if (cairosink->surface) {
-      gint surface_width, surface_height;
-      cairosink->backend->get_size (cairosink->surface, &surface_width,
-          &surface_height);
-      need_new_surface = caps_width != surface_width
-          || caps_height != surface_height;
-    }
+    /* FIXME: we should know whether we create the surface or it is externally
+     * provided and act accordingly */
+    need_new_surface = cairosink->surface == NULL
+        || !gst_caps_is_equal (caps, cairosink->caps);
 
     if (need_new_surface) {
+      GstStructure *structure;
+      gint caps_width, caps_height;
       if (cairosink->surface)
         cairo_surface_destroy (cairosink->surface);
 
       GST_TRACE_OBJECT (cairosink, "creating surface");
+      structure = gst_caps_get_structure (caps, 0);
+      gst_structure_get_int (structure, "width", &caps_width);
+      gst_structure_get_int (structure, "height", &caps_height);
       cairosink->surface =
           cairosink->backend->create_surface (caps_width, caps_height);
+    } else {
+      GST_TRACE_OBJECT (cairosink, "Already have a surface for these caps");
     }
 
     if (cairosink->surface) {
