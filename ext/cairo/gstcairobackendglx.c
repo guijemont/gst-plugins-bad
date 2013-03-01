@@ -1,3 +1,4 @@
+#define GL_GLEXT_PROTOTYPES
 #include <GL/gl.h>
 #include <GL/glx.h>
 
@@ -6,8 +7,25 @@
 #include "gstcairobackendglx.h"
 #include <gst/gst.h>
 
-static cairo_surface_t *gst_cairo_backend_glx_create_surface (gint width,
-    gint height);
+static cairo_surface_t *gst_cairo_backend_glx_create_display_surface (gint
+    width, gint height);
+static cairo_surface_t *gst_cairo_backend_glx_create_surface (GstCairoBackend *
+    backend, cairo_device_t * device, gint width, gint height,
+    GstCairoBackendSurfaceInfo ** _surface_info);
+static void gst_cairo_backend_glx_destroy_surface (cairo_surface_t * surface,
+    GstCairoBackendSurfaceInfo * surface_info);
+
+static gpointer gst_cairo_backend_glx_surface_map (cairo_surface_t * surface,
+    GstCairoBackendSurfaceInfo * surface_info, GstMapFlags flags);
+static void gst_cairo_backend_glx_surface_unmap (cairo_surface_t * surface,
+    GstCairoBackendSurfaceInfo * surface_info);
+
+typedef struct
+{
+  GstCairoBackendSurfaceInfo parent;
+  GLuint texture;
+  GLuint pbo;
+} GstCairoBackendGLXSurfaceInfo;
 
 static int multisampleAttributes[] = {
   GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
@@ -38,7 +56,12 @@ gst_cairo_backend_glx_new (void)
 {
   GstCairoBackend *backend = g_slice_new (GstCairoBackend);
 
+  backend->create_display_surface =
+      gst_cairo_backend_glx_create_display_surface;
   backend->create_surface = gst_cairo_backend_glx_create_surface;
+  backend->destroy_surface = gst_cairo_backend_glx_destroy_surface;
+  backend->surface_map = gst_cairo_backend_glx_surface_map;
+  backend->surface_unmap = gst_cairo_backend_glx_surface_unmap;
   backend->show = cairo_gl_surface_swapbuffers;
   backend->need_own_thread = TRUE;
 
@@ -74,7 +97,7 @@ waitForNotify (Display * dpy, XEvent * event, XPointer arg)
 
 /* Mostly cut and paste from glx-utils.c in cairo-gl-smoke-tests */
 static cairo_surface_t *
-gst_cairo_backend_glx_create_surface (int width, int height)
+gst_cairo_backend_glx_create_display_surface (int width, int height)
 {
   Window window, root_window;
   Display *display;
@@ -132,4 +155,60 @@ gst_cairo_backend_glx_create_surface (int width, int height)
   surface = cairo_gl_surface_create_for_window (device, window, width, height);
 
   return surface;
+}
+
+static cairo_surface_t *
+gst_cairo_backend_glx_create_surface (GstCairoBackend * backend,
+    cairo_device_t * device, gint width, gint height,
+    GstCairoBackendSurfaceInfo ** _surface_info)
+{
+  GstCairoBackendGLXSurfaceInfo *glx_surface_info =
+      g_slice_new (GstCairoBackendGLXSurfaceInfo);
+  GstCairoBackendSurfaceInfo *surface_info;
+
+  surface_info = (GstCairoBackendSurfaceInfo *) glx_surface_info;
+  surface_info->backend = backend;
+
+  /* not sure whether we really need to cairo_device_acquire()+_release()
+   * here, but cairo_gl_surface_create() seems to do it when it creates its
+   * texture  */
+  cairo_device_acquire (device);
+  {
+    /* RGB: 3 bytes per pixel */
+    guint data_size = width * height * 3;
+
+    /* create texture */
+    glGenTextures (1, &glx_surface_info->texture);
+    glTexImage2D (glx_surface_info->texture, 0, GL_RGB, width, height, 0,
+        GL_RGB, GL_UNSIGNED_BYTE, NULL);
+
+    /* create PBO */
+    glGenBuffersARB (1, &glx_surface_info->pbo);
+    glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->pbo);
+    glBufferDataARB (GL_PIXEL_UNPACK_BUFFER_ARB, data_size, NULL,
+        GL_STREAM_DRAW_ARB);
+    glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, 0);
+  }
+  cairo_device_release (device);
+
+  return cairo_gl_surface_create_for_texture (device, CAIRO_CONTENT_COLOR,
+      glx_surface_info->texture, width, height);
+}
+
+static void
+gst_cairo_backend_glx_destroy_surface (cairo_surface_t * surface,
+    GstCairoBackendSurfaceInfo * surface_info)
+{
+}
+
+static gpointer
+gst_cairo_backend_glx_surface_map (cairo_surface_t * surface,
+    GstCairoBackendSurfaceInfo * surface_info, GstMapFlags flags)
+{
+}
+
+static void
+gst_cairo_backend_glx_surface_unmap (cairo_surface_t * surface,
+    GstCairoBackendSurfaceInfo * surface_info)
+{
 }

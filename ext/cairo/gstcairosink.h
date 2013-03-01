@@ -65,6 +65,10 @@ G_BEGIN_DECLS
 typedef struct _GstCairoSink GstCairoSink;
 typedef struct _GstCairoSinkClass GstCairoSinkClass;
 
+typedef struct _GstCairoMemory GstCairoMemory;
+
+typedef struct _GstCairoAllocator GstCairoAllocator;
+
 struct _GstCairoSink
 {
   GstVideoSink base_cairosink;
@@ -86,11 +90,23 @@ struct _GstCairoSink
   cairo_device_t *device;
   GstFlowReturn last_ret;
   GstMiniObject *last_finished_operation;
+
+  GstCairoAllocator *allocator;
 };
 
 struct _GstCairoSinkClass
 {
   GstVideoSinkClass base_cairosink_class;
+};
+
+struct _GstCairoMemory
+{
+  GstMemory parent;
+
+  GstCairoBackend *backend;
+
+  cairo_surface_t *surface;
+  GstCairoBackendSurfaceInfo *surface_info;
 };
 
 GType gst_cairo_sink_get_type (void);

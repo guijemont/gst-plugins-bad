@@ -103,6 +103,17 @@ static gboolean gst_cairo_sink_source_check (GSource * source);
 static gboolean gst_cairo_sink_source_dispatch (GSource * source,
     GSourceFunc callback, gpointer user_data);
 
+
+static GstMemory *gst_cairo_allocator_alloc (GstCairoAllocator * allocator,
+    int width, int height);
+static void gst_cairo_allocator_free (GstAllocator * allocator,
+    GstMemory * memory);
+static GstCairoAllocator *gst_cairo_allocator_new (GstCairoSink * sink);
+
+gpointer gst_cairo_allocator_mem_map (GstMemory * mem, gsize maxsize,
+    GstMapFlags flags);
+void gst_cairo_allocator_mem_unmap (GstMemory * mem);
+
 typedef struct
 {
   GSource parent;
@@ -115,6 +126,14 @@ GSourceFuncs gst_cairo_sink_source_funcs = {
   gst_cairo_sink_source_dispatch,
 };
 
+struct _GstCairoAllocator
+{
+  GstAllocator allocator;
+
+  GstCairoSink *sink;
+};
+
+typedef GstAllocatorClass GstCairoAllocatorClass;
 
 enum
 {
@@ -210,6 +229,8 @@ gst_cairo_sink_init (GstCairoSink * cairosink)
 
   cairosink->sinkpad =
       gst_pad_new_from_static_template (&gst_cairo_sink_sink_template, "sink");
+
+  cairosink->allocator = gst_cairo_allocator_new (cairosink);
 }
 
 void
@@ -592,7 +613,7 @@ gst_cairo_sink_source_dispatch (GSource * source,
       gst_structure_get_int (structure, "width", &caps_width);
       gst_structure_get_int (structure, "height", &caps_height);
       cairosink->surface =
-          cairosink->backend->create_surface (caps_width, caps_height);
+          cairosink->backend->create_display_surface (caps_width, caps_height);
     } else {
       GST_TRACE_OBJECT (cairosink, "Already have a surface for these caps");
     }
@@ -692,4 +713,86 @@ gst_cairo_sink_sync_render_operation (GstCairoSink * cairosink,
   GST_TRACE_OBJECT (cairosink, "returning %s", gst_flow_get_name (last_ret));
 
   return last_ret;
+}
+
+/* --- allocator stuff --- */
+GType gst_cairo_allocator_get_type (void);
+G_DEFINE_TYPE (GstCairoAllocator, gst_cairo_allocator, GST_TYPE_ALLOCATOR);
+
+static void
+gst_cairo_allocator_class_init (GstCairoAllocatorClass * klass)
+{
+  GstAllocatorClass *allocator_class = GST_ALLOCATOR_CLASS (klass);
+
+  allocator_class->alloc = NULL;
+  allocator_class->free = gst_cairo_allocator_free;
+}
+
+static void
+gst_cairo_allocator_init (GstCairoAllocator * cairo_allocator)
+{
+  GstAllocator *allocator = GST_ALLOCATOR_CAST (cairo_allocator);
+
+  allocator->mem_type = "CairoSurface";
+  allocator->mem_map = gst_cairo_allocator_mem_map;
+  allocator->mem_unmap = gst_cairo_allocator_mem_unmap;
+}
+
+static GstCairoAllocator *
+gst_cairo_allocator_new (GstCairoSink * sink)
+{
+  GstCairoAllocator *allocator = g_object_new (gst_cairo_allocator_get_type (),
+      NULL);
+  /* FIXME: we probably should take a ref here when allocator is not a member
+   * of the sink any more */
+  allocator->sink = sink;
+
+  return allocator;
+}
+
+static GstMemory *
+gst_cairo_allocator_alloc (GstCairoAllocator * allocator, int width, int height)
+{
+  GstCairoMemory *mem;
+  GstCairoBackend *backend = allocator->sink->backend;
+  int stride;
+
+  mem = g_slice_new (GstCairoMemory);
+
+  stride = cairo_format_stride_for_width (CAIRO_FORMAT_RGB24, width);
+  gst_memory_init (GST_MEMORY_CAST (mem), 0, GST_ALLOCATOR_CAST (allocator),
+      NULL, stride * height, 0, 0, stride * height);
+
+  mem->surface = backend->create_surface (allocator->sink->backend,
+      allocator->sink->device, width, height, &mem->surface_info);
+  mem->backend = allocator->sink->backend;
+
+  return GST_MEMORY_CAST (mem);
+}
+
+static void
+gst_cairo_allocator_free (GstAllocator * allocator, GstMemory * gmem)
+{
+  GstCairoMemory *mem = (GstCairoMemory *) gmem;
+
+  cairo_surface_destroy (mem->surface);
+  gst_memory_unref (gmem);
+  g_slice_free (GstCairoMemory, mem);
+}
+
+gpointer
+gst_cairo_allocator_mem_map (GstMemory * gmem, gsize maxsize, GstMapFlags flags)
+{
+  GstCairoMemory *mem = (GstCairoMemory *) gmem;
+
+  return mem->surface_info->backend->surface_map (mem->surface,
+      mem->surface_info, flags);
+}
+
+void
+gst_cairo_allocator_mem_unmap (GstMemory * gmem)
+{
+  GstCairoMemory *mem = (GstCairoMemory *) gmem;
+
+  mem->surface_info->backend->surface_unmap (mem->surface, mem->surface_info);
 }

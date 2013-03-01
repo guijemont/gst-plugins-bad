@@ -50,8 +50,11 @@
 
 #include <cairo.h>
 #include <glib.h>
+#include <gst/gst.h>
+#include <gst/gstmemory.h>
 
 typedef struct _GstCairoBackend GstCairoBackend;
+typedef struct _GstCairoBackendSurfaceInfo GstCairoBackendSurfaceInfo;
 
 /**
   A GstCairoBackend handles all the things that are specific to a surface type.
@@ -69,13 +72,28 @@ typedef enum
 
 struct _GstCairoBackend
 {
-  cairo_surface_t *     (*create_surface)       (gint width, gint height);
-  void                  (*get_size)             (cairo_surface_t *surface,
-          gint *width, gint *height);
-  void                  (*show)                 (cairo_surface_t *surface);
+  cairo_surface_t *(*create_display_surface) (gint width, gint height);
+  cairo_surface_t *(*create_surface) (GstCairoBackend * backend,
+      cairo_device_t * device, gint width, gint height,
+      GstCairoBackendSurfaceInfo ** surface_info);
+  void (*destroy_surface) (cairo_surface_t * surface,
+      GstCairoBackendSurfaceInfo * surface_info);
+  void (*get_size) (cairo_surface_t * surface, gint * width, gint * height);
+  void (*show) (cairo_surface_t * surface);
+
+    gpointer (*surface_map) (cairo_surface_t * surface,
+      GstCairoBackendSurfaceInfo * surface_info, GstMapFlags flags);
+  void (*surface_unmap) (cairo_surface_t * surface,
+      GstCairoBackendSurfaceInfo * surface_info);
 
   GstCairoBackendType backend_type;
   gboolean need_own_thread;
+  gboolean can_map;
+};
+
+struct _GstCairoBackendSurfaceInfo
+{
+  GstCairoBackend *backend;
 };
 
 GstCairoBackend *gst_cairo_backend_new (GstCairoBackendType backend_type);
