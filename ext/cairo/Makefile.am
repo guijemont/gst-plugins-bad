@@ -8,6 +8,10 @@ libgstcairobad_la_SOURCES = \
 	gstcairobackend.c
 if HAVE_GLX
 libgstcairobad_la_SOURCES += gstcairobackendglx.c
+else
+if HAVE_EGL
+libgstcairobad_la_SOURCES += gstcairobackendegl.c
+endif
 endif
 libgstcairobad_la_CFLAGS = \
 	$(GST_PLUGINS_BASE_CFLAGS) \

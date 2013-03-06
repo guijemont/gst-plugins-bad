@@ -49,6 +49,8 @@
 #include "config.h"
 #ifdef HAVE_GLX
 #include "gstcairobackendglx.h"
+#elif HAVE_EGL
+#include "gstcairobackendegl.h"
 #endif
 
 #include <gst/gst.h>
