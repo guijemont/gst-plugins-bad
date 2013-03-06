@@ -72,12 +72,6 @@ get_display (void)
   return display;
 }
 
-static Bool
-waitForNotify (Display * dpy, XEvent * event, XPointer arg)
-{
-  return (event->type == MapNotify) && (event->xmap.window == (Window) arg);
-}
-
 /* Mostly cut and paste from glx-utils.c in cairo-gl-smoke-tests */
 static gboolean
 gst_cairo_backend_egl_create_display_surface (gint width, gint height,
@@ -85,7 +79,6 @@ gst_cairo_backend_egl_create_display_surface (gint width, gint height,
 {
   Window window;
   Display *display;
-  XEvent event;
 
   EGLDisplay egl_display;
   EGLContext egl_context;
@@ -140,12 +133,11 @@ gst_cairo_backend_egl_create_display_surface (gint width, gint height,
     goto CLEANUP_CONTEXT;
 
   XMapWindow (display, window);
+  XFlush (display);
 
   cairo_device = cairo_egl_device_create (egl_display, egl_context);
   cairo_surface = cairo_gl_surface_create_for_egl (cairo_device, egl_surface,
       width, height);
-
-  XIfEvent (get_display (), &event, waitForNotify, (XPointer) window);
 
   *surface = cairo_surface;
   *device = cairo_device;

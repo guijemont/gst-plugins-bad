@@ -175,7 +175,7 @@ enum
 };
 
 /* FIXME: default to xlib if GLX not available */
-#define GST_CAIRO_BACKEND_DEFAULT GST_CAIRO_BACKEND_GLX
+#define GST_CAIRO_BACKEND_DEFAULT GST_CAIRO_BACKEND_GL
 
 #define GST_CAIRO_BACKEND_TYPE (gst_cairo_backend_get_type())
 static GType
@@ -184,7 +184,11 @@ gst_cairo_backend_get_type (void)
   static GType backend_type = 0;
 
   static const GEnumValue backend_values[] = {
-    {GST_CAIRO_BACKEND_GLX, "Use OpenGL and GLX", "glx"},
+#ifdef HAVE_GLX
+    {GST_CAIRO_BACKEND_GL, "Use OpenGL and GLX", "glx"},
+#elif HAVE_EGL
+    {GST_CAIRO_BACKEND_GL, "Use OpenGLES and EGL", "egl"},
+#endif
     {GST_CAIRO_BACKEND_XLIB, "Use Xlib", "xlib"},
     {0, NULL, NULL}
   };
