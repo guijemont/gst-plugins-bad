@@ -613,6 +613,11 @@ upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
      * it? */
     cairo_surface_t *source;
     cairo_t *context;
+    double x_scale = 1.0;
+    double y_scale = 1.0;
+    gint surface_width;
+    gint surface_height;
+
     gint stride = cairo_format_stride_for_width (CAIRO_FORMAT_ARGB32, width);
 
     if (stride * height > map_info.size) {
@@ -627,6 +632,16 @@ upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
         CAIRO_FORMAT_ARGB32, width, height, stride);
 
     context = cairo_create (cairosink->surface);
+
+    /* compute actual scaling */
+    if (!cairosink->owns_surface) {
+      cairosink->backend->get_size (cairosink->surface, &surface_width,
+          &surface_height);
+      x_scale = ((double) surface_width) / width;
+      y_scale = ((double) surface_height) / height;
+    }
+
+    cairo_scale (context, x_scale, y_scale);
     cairo_set_source_surface (context, source, 0, 0);
     cairo_set_operator (context, CAIRO_OPERATOR_SOURCE);
     cairo_paint (context);

@@ -12,6 +12,8 @@ static gboolean gst_cairo_backend_egl_create_display_surface (gint
     width, gint height, cairo_device_t ** device, cairo_surface_t ** surface);
 static cairo_surface_t *gst_cairo_backend_egl_create_surface (cairo_device_t *
     device, gint width, gint height);
+static void gst_cairo_backend_egl_get_size (cairo_surface_t * surface,
+    gint * width, gint * height);
 
 static EGLint multisampleAttributes[] = {
   EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
@@ -47,6 +49,7 @@ gst_cairo_backend_egl_new (void)
   backend->create_surface = gst_cairo_backend_egl_create_surface;
   backend->show = cairo_gl_surface_swapbuffers;
   backend->need_own_thread = TRUE;
+  backend->get_size = gst_cairo_backend_egl_get_size;
 
   return backend;
 }
@@ -159,4 +162,12 @@ gst_cairo_backend_egl_create_surface (cairo_device_t * device, gint width,
 {
 
   return cairo_gl_surface_create (device, CAIRO_CONTENT_COLOR, width, height);
+}
+
+static void
+gst_cairo_backend_egl_get_size (cairo_surface_t * surface, gint * width,
+    gint * height)
+{
+  *width = cairo_gl_surface_get_width (surface);
+  *height = cairo_gl_surface_get_height (surface);
 }

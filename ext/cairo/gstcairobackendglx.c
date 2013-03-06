@@ -62,6 +62,9 @@ typedef struct
   GLuint height;
 } GstCairoBackendGLXSurfaceInfo;
 
+static void gst_cairo_backend_glx_get_size (cairo_surface_t * surface,
+    gint * width, gint * height);
+
 static int multisampleAttributes[] = {
   GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
   GLX_RENDER_TYPE, GLX_RGBA_BIT,
@@ -104,6 +107,7 @@ gst_cairo_backend_glx_new (void)
   backend->surface_unmap = gst_cairo_backend_glx_surface_unmap;
   backend->show = gst_cairo_backend_glx_show;
   backend->query_can_map = gst_cairo_backend_glx_query_can_map;
+  backend->get_size = gst_cairo_backend_glx_get_size;
   backend->need_own_thread = TRUE;
   backend->can_map = TRUE;
 
@@ -462,4 +466,12 @@ gst_cairo_backend_glx_surface_unmap (cairo_surface_t * surface,
   cairo_device_release (device);
 
   gl_debug ("exit");
+}
+
+static void
+gst_cairo_backend_glx_get_size (cairo_surface_t * surface, gint * width,
+    gint * height)
+{
+  *width = cairo_gl_surface_get_width (surface);
+  *height = cairo_gl_surface_get_height (surface);
 }
