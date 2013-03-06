@@ -87,6 +87,7 @@ struct _GstCairoSink
   GMutex render_mutex;
   GCond render_cond;
   cairo_surface_t *surface;
+  gboolean owns_surface;
   cairo_device_t *device;
   GstFlowReturn last_ret;
   GstMiniObject *last_finished_operation;

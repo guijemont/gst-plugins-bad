@@ -262,7 +262,7 @@ gst_cairo_sink_class_init (GstCairoSinkClass * klass)
 static void
 gst_cairo_sink_init (GstCairoSink * cairosink)
 {
-
+  cairosink->owns_surface = TRUE;
   cairosink->sinkpad =
       gst_pad_new_from_static_template (&gst_cairo_sink_sink_template, "sink");
 }
@@ -276,12 +276,19 @@ gst_cairo_sink_set_property (GObject * object, guint property_id,
   switch (property_id) {
     case PROP_CAIRO_SURFACE:
     {
-      cairo_surface_t *surface = g_value_get_boxed (value);
-      if (surface)
-        cairo_surface_reference (surface);
-      if (cairosink->surface)
+      cairo_surface_t *new_surface = g_value_get_boxed (value);
+      if (new_surface && cairosink->surface != new_surface) {
+        /* existing surface */
         cairo_surface_destroy (cairosink->surface);
-      cairosink->surface = surface;
+        cairo_device_destroy (cairosink->device);
+
+        cairo_surface_reference (new_surface);
+        cairosink->surface = new_surface;
+        cairosink->owns_surface = FALSE;
+
+        cairosink->device = cairo_surface_get_device (new_surface);
+        cairo_device_reference (cairosink->device);
+      }
       break;
     }
     case PROP_CAIRO_BACKEND:
@@ -675,11 +682,14 @@ gst_cairo_sink_source_dispatch (GSource * source,
     /* FIXME: we should know whether we create the surface or it is externally
      * provided and act accordingly */
     need_new_surface = cairosink->surface == NULL
-        || !gst_caps_is_equal (caps, cairosink->caps);
+        || (!gst_caps_is_equal (caps, cairosink->caps)
+        && cairosink->owns_surface);
 
     if (need_new_surface) {
       GstStructure *structure;
       gint caps_width, caps_height;
+
+      /* we only destroy surface if we owns surface */
       if (cairosink->surface)
         cairo_surface_destroy (cairosink->surface);
 
