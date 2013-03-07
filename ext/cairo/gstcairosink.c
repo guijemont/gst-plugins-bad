@@ -692,6 +692,8 @@ gst_cairo_sink_source_dispatch (GSource * source,
 
     if (cairosink->surface) {
       cairosink->last_ret = GST_FLOW_OK;
+      if (cairosink->caps)
+        gst_caps_unref (cairosink->caps);
       cairosink->caps = gst_caps_ref (caps);
     } else {
       GST_ERROR_OBJECT (cairosink, "No surface!");
