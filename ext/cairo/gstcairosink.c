@@ -103,6 +103,8 @@ static gboolean gst_cairo_sink_source_check (GSource * source);
 static gboolean gst_cairo_sink_source_dispatch (GSource * source,
     GSourceFunc callback, gpointer user_data);
 
+static gboolean gst_cairo_sink_propose_allocation (GstBaseSink * bsink,
+    GstQuery * query);
 
 
 static GstMemory *gst_cairo_allocator_alloc (GstAllocator * allocator,
@@ -197,6 +199,7 @@ gst_cairo_sink_class_init (GstCairoSinkClass * klass)
   base_sink_class->stop = gst_cairo_sink_stop;
   base_sink_class->set_caps = gst_cairo_sink_set_caps;
   base_sink_class->prepare = gst_cairo_sink_prepare;
+  base_sink_class->propose_allocation = gst_cairo_sink_propose_allocation;
   video_sink_class->show_frame = GST_DEBUG_FUNCPTR (gst_cairo_sink_show_frame);
 
   g_object_class_install_property (gobject_class, PROP_CAIRO_SURFACE,
@@ -720,6 +723,54 @@ gst_cairo_sink_sync_render_operation (GstCairoSink * cairosink,
   GST_TRACE_OBJECT (cairosink, "returning %s", gst_flow_get_name (last_ret));
 
   return last_ret;
+}
+
+static gsize
+_compute_padding (GstCairoSink * sink)
+{
+  GstStructure *structure;
+  gint height, width, stride;
+
+  structure = gst_caps_get_structure (sink->caps, 0);
+
+  if (!gst_structure_get_int (structure, "width", &width)
+      || gst_structure_get_int (structure, "height", &height))
+    return 0;
+
+  stride = cairo_format_stride_for_width (CAIRO_FORMAT_RGB24, width);
+
+  return (stride - width) * height;
+}
+
+static gboolean
+gst_cairo_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
+{
+  GstCaps *caps;
+  GstCairoSink *cairosink = GST_CAIRO_SINK (bsink);
+  gboolean need_pool;
+
+  gst_query_parse_allocation (query, &caps, &need_pool);
+  if (!caps) {
+    GST_ERROR_OBJECT (cairosink,
+        "Can only handle allocation queries with caps");
+    return FALSE;
+  } else if (need_pool) {
+    GST_WARNING_OBJECT (cairosink, "Pool allocation not implemented (yet)");
+    return FALSE;
+  }
+
+  if (cairosink->allocator) {
+    GstAllocationParams params;
+    params.flags = 0;
+    params.align = 0;
+    params.prefix = 0;
+    params.padding = _compute_padding (cairosink);
+    gst_query_add_allocation_param (query,
+        GST_ALLOCATOR (cairosink->allocator), &params);
+    return TRUE;
+  }
+
+  return FALSE;
 }
 
 /* --- allocator stuff --- */
