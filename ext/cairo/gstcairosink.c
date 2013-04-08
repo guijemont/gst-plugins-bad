@@ -229,8 +229,6 @@ gst_cairo_sink_init (GstCairoSink * cairosink)
 
   cairosink->sinkpad =
       gst_pad_new_from_static_template (&gst_cairo_sink_sink_template, "sink");
-
-  cairosink->allocator = gst_cairo_allocator_new (cairosink);
 }
 
 void
@@ -359,6 +357,9 @@ gst_cairo_sink_start (GstBaseSink * base_sink)
 
   if (cairosink->backend == NULL)
     cairosink->backend = gst_cairo_backend_new (cairosink->backend_type);
+
+  if (cairosink->backend->can_map)
+    cairosink->allocator = gst_cairo_allocator_new (cairosink);
 
   if (!cairosink->backend)
     goto error;
