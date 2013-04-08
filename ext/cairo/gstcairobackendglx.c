@@ -25,6 +25,9 @@ typedef struct
   GstCairoBackendSurfaceInfo parent;
   GLuint texture;
   GLuint pbo;
+  GLuint data_size;
+  GLuint width;
+  GLuint height;
 } GstCairoBackendGLXSurfaceInfo;
 
 static int multisampleAttributes[] = {
@@ -64,6 +67,7 @@ gst_cairo_backend_glx_new (void)
   backend->surface_unmap = gst_cairo_backend_glx_surface_unmap;
   backend->show = cairo_gl_surface_swapbuffers;
   backend->need_own_thread = TRUE;
+  backend->can_map = TRUE;
 
   return backend;
 }
@@ -175,7 +179,9 @@ gst_cairo_backend_glx_create_surface (GstCairoBackend * backend,
   cairo_device_acquire (device);
   {
     /* RGB: 3 bytes per pixel */
-    guint data_size = width * height * 3;
+    glx_surface_info->data_size = width * height * 3;
+    glx_surface_info->width = width;
+    glx_surface_info->height = height;
 
     /* create texture */
     glGenTextures (1, &glx_surface_info->texture);
@@ -185,8 +191,8 @@ gst_cairo_backend_glx_create_surface (GstCairoBackend * backend,
     /* create PBO */
     glGenBuffersARB (1, &glx_surface_info->pbo);
     glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->pbo);
-    glBufferDataARB (GL_PIXEL_UNPACK_BUFFER_ARB, data_size, NULL,
-        GL_STREAM_DRAW_ARB);
+    glBufferDataARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->data_size,
+        NULL, GL_STREAM_DRAW_ARB);
     glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, 0);
   }
   cairo_device_release (device);
@@ -199,16 +205,71 @@ static void
 gst_cairo_backend_glx_destroy_surface (cairo_surface_t * surface,
     GstCairoBackendSurfaceInfo * surface_info)
 {
+  GstCairoBackendGLXSurfaceInfo *glx_surface_info =
+      (GstCairoBackendGLXSurfaceInfo *) surface_info;
+  cairo_device_t *device;
+
+  device = cairo_surface_get_device (surface);
+
+  cairo_surface_destroy (surface);
+
+  cairo_device_acquire (device);
+  {
+    glDeleteBuffersARB (1, &glx_surface_info->pbo);
+    glDeleteTextures (1, &glx_surface_info->texture);
+  }
+  cairo_device_release (device);
+
+  g_slice_free (GstCairoBackendGLXSurfaceInfo, glx_surface_info);
 }
 
 static gpointer
 gst_cairo_backend_glx_surface_map (cairo_surface_t * surface,
     GstCairoBackendSurfaceInfo * surface_info, GstMapFlags flags)
 {
+  GstCairoBackendGLXSurfaceInfo *glx_surface_info =
+      (GstCairoBackendGLXSurfaceInfo *) surface_info;
+
+  gpointer data_area;
+
+  if (flags != GST_MAP_WRITE) {
+    GST_WARNING ("Mapping glx surface only implemented for writing");
+    return NULL;
+  }
+
+  glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->pbo);
+
+  /* We put a NULL buffer so that GL discards the current buffer if it is
+   * still being used, instead of waiting for the end of an operation on it.
+   * Makes sure the call to glMapBufferARB() won't cause a sync */
+  glBufferDataARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->data_size,
+      NULL, GL_STREAM_DRAW_ARB);
+
+  data_area = glMapBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, GL_WRITE_ONLY_ARB);
+
+  glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, 0);
+
+  return data_area;
 }
 
 static void
 gst_cairo_backend_glx_surface_unmap (cairo_surface_t * surface,
     GstCairoBackendSurfaceInfo * surface_info)
 {
+  GstCairoBackendGLXSurfaceInfo *glx_surface_info =
+      (GstCairoBackendGLXSurfaceInfo *) surface_info;
+
+  /* FIXME: how/when do we know that the transfer is done? */
+
+  glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->pbo);
+  glUnmapBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB);
+
+  glBindTexture (GL_TEXTURE_2D, glx_surface_info->texture);
+  /* copies data from pbo to texture */
+  glTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, glx_surface_info->width,
+      glx_surface_info->height, GL_RGB, GL_UNSIGNED_BYTE, 0);
+
+  glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, 0);
+  glBindTexture (GL_TEXTURE_2D, 0);
+
 }
