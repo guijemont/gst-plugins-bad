@@ -432,6 +432,11 @@ gst_cairo_sink_stop (GstBaseSink * base_sink)
 {
   GstCairoSink *cairosink = GST_CAIRO_SINK (base_sink);
 
+  if (cairosink->allocator) {
+    gst_object_unref (cairosink->allocator);
+    cairosink->allocator = NULL;
+  }
+
   if (cairosink->surface) {
     cairo_surface_destroy (cairosink->surface);
     cairosink->surface = NULL;
