@@ -104,8 +104,9 @@ static gboolean gst_cairo_sink_source_dispatch (GSource * source,
     GSourceFunc callback, gpointer user_data);
 
 
-static GstMemory *gst_cairo_allocator_alloc (GstCairoAllocator * allocator,
-    int width, int height);
+
+static GstMemory *gst_cairo_allocator_alloc (GstAllocator * allocator,
+    gsize size, GstAllocationParams * params);
 static void gst_cairo_allocator_free (GstAllocator * allocator,
     GstMemory * memory);
 static GstCairoAllocator *gst_cairo_allocator_new (GstCairoSink * sink);
@@ -730,7 +731,7 @@ gst_cairo_allocator_class_init (GstCairoAllocatorClass * klass)
 {
   GstAllocatorClass *allocator_class = GST_ALLOCATOR_CLASS (klass);
 
-  allocator_class->alloc = NULL;
+  allocator_class->alloc = gst_cairo_allocator_alloc;
   allocator_class->free = gst_cairo_allocator_free;
 }
 
@@ -757,11 +758,24 @@ gst_cairo_allocator_new (GstCairoSink * sink)
 }
 
 static GstMemory *
-gst_cairo_allocator_alloc (GstCairoAllocator * allocator, int width, int height)
+gst_cairo_allocator_alloc (GstAllocator * allocator, gsize size,
+    GstAllocationParams * params)
 {
   GstCairoMemory *mem;
-  GstCairoBackend *backend = allocator->sink->backend;
-  int stride;
+  GstCairoAllocator *cairo_allocator = (GstCairoAllocator *) allocator;
+  GstCairoBackend *backend;
+  GstStructure *structure;
+  int width, height, stride;
+
+  backend = cairo_allocator->sink->backend;
+
+  structure = gst_caps_get_structure (cairo_allocator->sink->caps, 0);
+
+  if (!gst_structure_get_int (structure, "width", &width)
+      || !gst_structure_get_int (structure, "height", &height)) {
+    GST_WARNING_OBJECT (cairo_allocator->sink, "No proper caps set");
+    return NULL;
+  }
 
   mem = g_slice_new (GstCairoMemory);
 
@@ -769,9 +783,9 @@ gst_cairo_allocator_alloc (GstCairoAllocator * allocator, int width, int height)
   gst_memory_init (GST_MEMORY_CAST (mem), 0, GST_ALLOCATOR_CAST (allocator),
       NULL, stride * height, 0, 0, stride * height);
 
-  mem->surface = backend->create_surface (allocator->sink->backend,
-      allocator->sink->device, width, height, &mem->surface_info);
-  mem->backend = allocator->sink->backend;
+  mem->surface = backend->create_surface (backend,
+      cairo_allocator->sink->device, stride, height, &mem->surface_info);
+  mem->backend = backend;
 
   return GST_MEMORY_CAST (mem);
 }
