@@ -775,8 +775,7 @@ gst_cairo_allocator_free (GstAllocator * allocator, GstMemory * gmem)
 {
   GstCairoMemory *mem = (GstCairoMemory *) gmem;
 
-  cairo_surface_destroy (mem->surface);
-  gst_memory_unref (gmem);
+  mem->surface_info->backend->destroy_surface (mem->surface, mem->surface_info);
   g_slice_free (GstCairoMemory, mem);
 }
 
