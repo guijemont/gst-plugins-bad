@@ -343,7 +343,6 @@ gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf)
   GST_TRACE_OBJECT (video_sink, "Need to show buffer %" GST_PTR_FORMAT, buf);
 
   ret = gst_cairo_sink_sync_render_operation (cairosink, NULL);
-  gst_buffer_unref (buf);
 
   return ret;
 }
