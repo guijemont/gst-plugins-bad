@@ -530,16 +530,12 @@ static GstFlowReturn
 upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
 {
   GstStructure *structure;
-  GstMemory *mem;
+  GstMemory *gmem;
   GstMapInfo map_info;
   gint width, height;
 
   if (!cairosink->caps)
     return GST_FLOW_NOT_NEGOTIATED;
-
-  structure = gst_caps_get_structure (cairosink->caps, 0);
-  gst_structure_get_int (structure, "width", &width);
-  gst_structure_get_int (structure, "height", &height);
 
   if (gst_buffer_n_memory (buf) != 1) {
     GST_ERROR_OBJECT (cairosink, "Handling of buffer with more than one "
@@ -547,9 +543,29 @@ upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
     return GST_FLOW_ERROR;
   }
 
-  mem = gst_buffer_peek_memory (buf, 0);
+  gmem = gst_buffer_peek_memory (buf, 0);
 
-  if (gst_memory_map (mem, &map_info, GST_MAP_READ)) {
+  if (gmem->allocator == GST_ALLOCATOR_CAST (cairosink->allocator)) {
+    cairo_t *context;
+    GstCairoMemory *mem = (GstCairoMemory *) gmem;
+    /* mem is already in GPU */
+
+    context = cairo_create (cairosink->surface);
+    cairo_set_source_surface (context, mem->surface, 0, 0);
+    cairo_paint (context);
+    cairo_destroy (context);
+
+    GST_TRACE_OBJECT (cairosink,
+        "Copied texture from %" GST_PTR_FORMAT " to display surface", gmem);
+
+    return GST_FLOW_OK;
+  }
+
+  structure = gst_caps_get_structure (cairosink->caps, 0);
+  gst_structure_get_int (structure, "width", &width);
+  gst_structure_get_int (structure, "height", &height);
+
+  if (gst_memory_map (gmem, &map_info, GST_MAP_READ)) {
     /* FIXME: should we recreate the context every time or save it and reuse
      * it? */
     cairo_surface_t *source;
@@ -560,7 +576,7 @@ upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
       GST_ERROR_OBJECT (cairosink, "Incompatible stride? width:%d height:%d "
           "expected stride: %d expected size: %d actual size: %d",
           width, height, stride, stride * height, map_info.size);
-      gst_memory_unmap (mem, &map_info);
+      gst_memory_unmap (gmem, &map_info);
       return GST_FLOW_ERROR;
     }
 
@@ -573,7 +589,7 @@ upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
     cairo_destroy (context);
 
     cairo_surface_destroy (source);
-    gst_memory_unmap (mem, &map_info);
+    gst_memory_unmap (gmem, &map_info);
     GST_TRACE_OBJECT (cairosink, "Uploaded buffer %" GST_PTR_FORMAT, buf);
   } else {
     GST_ERROR_OBJECT (cairosink, "Could not map memory for reading");
