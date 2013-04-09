@@ -723,6 +723,17 @@ gst_cairo_sink_source_dispatch (GSource * source,
         g_assert_not_reached ();
       }
       cairosink->backend->surface_unmap (surface, surface_info);
+    } else if (gst_structure_has_name (query_structure,
+            "cairosink-destroy-surface")) {
+      cairo_surface_t *surface;
+      GstCairoBackendSurfaceInfo *surface_info;
+
+      if (!gst_structure_get (query_structure,
+              "surface", G_TYPE_POINTER, &surface,
+              "surface-info", G_TYPE_POINTER, &surface_info, NULL)) {
+        g_assert_not_reached ();
+      }
+      cairosink->backend->destroy_surface (surface, surface_info);
     } else {
       g_assert_not_reached ();
     }
@@ -1018,8 +1029,23 @@ static void
 gst_cairo_allocator_free (GstAllocator * allocator, GstMemory * gmem)
 {
   GstCairoMemory *mem = (GstCairoMemory *) gmem;
+  GstCairoAllocator *cairo_allocator = (GstCairoAllocator *) gmem->allocator;
+  GstStructure *query_structure;
+  GstQuery *query;
+  GstFlowReturn ret;
 
-  mem->surface_info->backend->destroy_surface (mem->surface, mem->surface_info);
+  query_structure = gst_structure_new ("cairosink-destroy-surface",
+      "surface", G_TYPE_POINTER, mem->surface,
+      "surface-info", G_TYPE_POINTER, mem->surface_info, NULL);
+  query = gst_query_new_custom (GST_QUERY_CUSTOM, query_structure);
+
+  ret = gst_cairo_sink_sync_render_operation (cairo_allocator->sink,
+      GST_MINI_OBJECT_CAST (query));
+
+  if (ret != GST_FLOW_OK)
+    GST_ERROR_OBJECT (cairo_allocator->sink,
+        "Could not free mem %" GST_PTR_FORMAT, gmem);
+
   g_slice_free (GstCairoMemory, mem);
 }
 
