@@ -583,6 +583,16 @@ upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
   return GST_FLOW_OK;
 }
 
+static gpointer
+_structure_get_pointer (GstStructure * structure, const gchar * field)
+{
+  const GValue *value;
+
+  value = gst_structure_get_value (structure, field);
+
+  return g_value_get_pointer (value);
+}
+
 static gboolean
 gst_cairo_sink_source_dispatch (GSource * source,
     GSourceFunc callback, gpointer user_data)
@@ -641,7 +651,6 @@ gst_cairo_sink_source_dispatch (GSource * source,
   } else if (GST_IS_QUERY (object)) {
     GstStructure *query_structure =
         (GstStructure *) gst_query_get_structure (GST_QUERY_CAST (object));
-    GValue value = { 0, };
 
     if (gst_structure_has_name (query_structure, "cairosink-allocate-surface")) {
       GstMemory *mem;
@@ -656,11 +665,38 @@ gst_cairo_sink_source_dispatch (GSource * source,
 
       GST_TRACE_OBJECT (cairosink, "got new mem %p, setting on query %p", mem,
           object);
-      g_value_init (&value, G_TYPE_POINTER);
-      g_value_set_pointer (&value, mem);
-      gst_structure_set_value (query_structure, "memory", &value);
-      g_value_unset (&value);
+      {
+        GValue value = { 0, };
+        g_value_init (&value, G_TYPE_POINTER);
+        g_value_set_pointer (&value, mem);
+        gst_structure_set_value (query_structure, "memory", &value);
+        g_value_unset (&value);
+      }
+    } else if (gst_structure_has_name (query_structure,
+            "cairosink-map-surface")) {
+      gpointer mapped_area;
+      cairo_surface_t *surface;
+      GstCairoBackendSurfaceInfo *surface_info;
+      GstMapFlags flags;
 
+      if (!gst_structure_get (query_structure,
+              "surface", G_TYPE_POINTER, &surface,
+              "surface-info", G_TYPE_POINTER, &surface_info,
+              "flags", G_TYPE_INT, &flags, NULL)) {
+        g_assert_not_reached ();
+      }
+
+      mapped_area =
+          cairosink->backend->surface_map (surface, surface_info, flags);
+      GST_TRACE_OBJECT (cairosink, "Surface %p mapped to %p", surface,
+          mapped_area);
+      {
+        GValue value = { 0, };
+        g_value_init (&value, G_TYPE_POINTER);
+        g_value_set_pointer (&value, mapped_area);
+        gst_structure_set_value (query_structure, "mapped-area", &value);
+        g_value_unset (&value);
+      }
     } else {
       g_assert_not_reached ();
     }
@@ -886,7 +922,6 @@ gst_cairo_allocator_alloc (GstAllocator * allocator, gsize size,
   GstQuery *query;
   int width, height, stride;
   GstFlowReturn ret;
-  const GValue *value;
   GstMemory *mem;
 
   caps_structure = gst_caps_get_structure (cairo_allocator->sink->caps, 0);
@@ -916,8 +951,7 @@ gst_cairo_allocator_alloc (GstAllocator * allocator, gsize size,
       || !gst_structure_has_field (query_structure, "memory"))
     goto beach;
 
-  value = gst_structure_get_value (query_structure, "memory");
-  mem = GST_MEMORY_CAST (g_value_get_pointer (value));
+  mem = GST_MEMORY_CAST (_structure_get_pointer (query_structure, "memory"));
 
 beach:
   if (!mem) {
@@ -967,9 +1001,38 @@ gpointer
 gst_cairo_allocator_mem_map (GstMemory * gmem, gsize maxsize, GstMapFlags flags)
 {
   GstCairoMemory *mem = (GstCairoMemory *) gmem;
+  GstStructure *query_structure;
+  GstCairoAllocator *cairo_allocator = (GstCairoAllocator *) gmem->allocator;
+  GstQuery *query;
+  gpointer mapped_area;
+  GstFlowReturn ret;
 
-  return mem->surface_info->backend->surface_map (mem->surface,
-      mem->surface_info, flags);
+  query_structure = gst_structure_new ("cairosink-map-surface",
+      "surface", G_TYPE_POINTER, mem->surface,
+      "surface-info", G_TYPE_POINTER, mem->surface_info,
+      "flags", G_TYPE_INT, (int) flags, NULL);
+  query = gst_query_new_custom (GST_QUERY_CUSTOM, query_structure);
+
+  ret = gst_cairo_sink_sync_render_operation (cairo_allocator->sink,
+      GST_MINI_OBJECT_CAST (query));
+
+
+  if (ret != GST_FLOW_OK
+      || !gst_structure_has_field (query_structure, "mapped-area"))
+    goto beach;
+
+  mapped_area = _structure_get_pointer (query_structure, "mapped-area");
+
+  GST_TRACE_OBJECT (cairo_allocator->sink,
+      "render returned mapped area: %p", mapped_area);
+
+beach:
+  if (!mapped_area)
+    GST_ERROR_OBJECT (cairo_allocator->sink, "Could not map");
+
+  gst_query_unref (query);
+
+  return mapped_area;
 }
 
 void
