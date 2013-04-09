@@ -747,16 +747,47 @@ gst_cairo_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
 {
   GstCaps *caps;
   GstCairoSink *cairosink = GST_CAIRO_SINK (bsink);
+  GstStructure *structure;
   gboolean need_pool;
+  gint width, height, size = 0;
+  gboolean ret = FALSE;
 
   gst_query_parse_allocation (query, &caps, &need_pool);
   if (!caps) {
     GST_ERROR_OBJECT (cairosink,
         "Can only handle allocation queries with caps");
     return FALSE;
-  } else if (need_pool) {
-    GST_WARNING_OBJECT (cairosink, "Pool allocation not implemented (yet)");
+  }
+
+  structure = gst_caps_get_structure (cairosink->caps, 0);
+  if (gst_structure_get_int (structure, "width", &width)
+      && gst_structure_get_int (structure, "height", &height))
+    size = width * height * 3;
+
+  if (!size) {
+    GST_ERROR_OBJECT (cairosink, "No caps or bad caps");
     return FALSE;
+  }
+
+
+  if (need_pool && !cairosink->buffer_pool) {
+    GstStructure *config;
+
+    cairosink->buffer_pool = gst_buffer_pool_new ();
+    config = gst_buffer_pool_get_config (cairosink->buffer_pool);
+    gst_buffer_pool_config_set_allocator (config,
+        GST_ALLOCATOR (cairosink->allocator), NULL);
+    gst_buffer_pool_config_set_params (config, cairosink->caps, size, 2, 0);
+    gst_buffer_pool_set_config (cairosink->buffer_pool, config);
+  }
+
+  if (need_pool && cairosink->buffer_pool) {
+    gst_query_add_allocation_pool (query, cairosink->buffer_pool, size, 2, 0);
+    GST_DEBUG_OBJECT (cairosink,
+        "adding pool %" GST_PTR_FORMAT " to query %" GST_PTR_FORMAT,
+        cairosink->buffer_pool, query);
+
+    ret = TRUE;
   }
 
   if (cairosink->allocator) {
@@ -767,10 +798,13 @@ gst_cairo_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
     params.padding = _compute_padding (cairosink);
     gst_query_add_allocation_param (query,
         GST_ALLOCATOR (cairosink->allocator), &params);
-    return TRUE;
+    GST_DEBUG_OBJECT (cairosink,
+        "adding allocator %" GST_PTR_FORMAT " to query %" GST_PTR_FORMAT,
+        cairosink->allocator, query);
+    ret = TRUE;
   }
 
-  return FALSE;
+  return ret;
 }
 
 /* --- allocator stuff --- */

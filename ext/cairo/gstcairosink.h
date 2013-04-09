@@ -92,6 +92,7 @@ struct _GstCairoSink
   GstMiniObject *last_finished_operation;
 
   GstCairoAllocator *allocator;
+  GstBufferPool *buffer_pool;
 };
 
 struct _GstCairoSinkClass
