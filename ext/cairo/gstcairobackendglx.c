@@ -169,6 +169,7 @@ gst_cairo_backend_glx_create_surface (GstCairoBackend * backend,
   GstCairoBackendGLXSurfaceInfo *glx_surface_info =
       g_slice_new (GstCairoBackendGLXSurfaceInfo);
   GstCairoBackendSurfaceInfo *surface_info;
+  cairo_surface_t *surface;
 
   surface_info = (GstCairoBackendSurfaceInfo *) glx_surface_info;
   surface_info->backend = backend;
@@ -197,8 +198,11 @@ gst_cairo_backend_glx_create_surface (GstCairoBackend * backend,
   }
   cairo_device_release (device);
 
-  return cairo_gl_surface_create_for_texture (device, CAIRO_CONTENT_COLOR,
+  surface = cairo_gl_surface_create_for_texture (device, CAIRO_CONTENT_COLOR,
       glx_surface_info->texture, width, height);
+  *_surface_info = surface_info;
+
+  return surface;
 }
 
 static void
