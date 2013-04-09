@@ -109,6 +109,8 @@ static gboolean gst_cairo_sink_propose_allocation (GstBaseSink * bsink,
 
 static GstMemory *gst_cairo_allocator_alloc (GstAllocator * allocator,
     gsize size, GstAllocationParams * params);
+static GstMemory *gst_cairo_allocator_do_alloc (GstCairoAllocator *
+    allocator, gint width, gint height, gint stride);
 static void gst_cairo_allocator_free (GstAllocator * allocator,
     GstMemory * memory);
 static GstCairoAllocator *gst_cairo_allocator_new (GstCairoSink * sink);
@@ -637,6 +639,34 @@ gst_cairo_sink_source_dispatch (GSource * source,
     }
 
   } else if (GST_IS_QUERY (object)) {
+    GstStructure *query_structure =
+        (GstStructure *) gst_query_get_structure (GST_QUERY_CAST (object));
+    GValue value = { 0, };
+
+    if (gst_structure_has_name (query_structure, "cairosink-allocate-surface")) {
+      GstMemory *mem;
+      gint width, height, stride;
+      if (!gst_structure_get_int (query_structure, "width", &width)
+          || !gst_structure_get_int (query_structure, "height", &height)
+          || !gst_structure_get_int (query_structure, "stride", &stride))
+        g_assert_not_reached ();
+
+      mem = gst_cairo_allocator_do_alloc (cairosink->allocator, width, height,
+          stride);
+
+      GST_TRACE_OBJECT (cairosink, "got new mem %p, setting on query %p", mem,
+          object);
+      g_value_init (&value, G_TYPE_POINTER);
+      g_value_set_pointer (&value, mem);
+      gst_structure_set_value (query_structure, "memory", &value);
+      g_value_unset (&value);
+
+    } else {
+      g_assert_not_reached ();
+    }
+
+    cairosink->last_ret = GST_FLOW_OK;
+
   } else if (GST_IS_BUFFER (object)) {
     GstBuffer *buf = GST_BUFFER_CAST (object);
 
@@ -647,6 +677,7 @@ gst_cairo_sink_source_dispatch (GSource * source,
     cairo_gl_surface_swapbuffers (cairosink->surface);
   }
 
+  item->destroy (item);
   cairosink->last_finished_operation = object;
   g_cond_signal (&cairosink->render_cond);
   g_mutex_unlock (&cairosink->render_mutex);
@@ -658,7 +689,7 @@ static void
 gst_cairo_sink_queue_item_destroy (gpointer data)
 {
   GstDataQueueItem *item = (GstDataQueueItem *) data;
-  if (item->object)
+  if (item->object && !GST_IS_QUERY (item->object))
     gst_mini_object_unref (item->object);
 
   g_slice_free (GstDataQueueItem, item);
@@ -688,6 +719,10 @@ gst_cairo_sink_sync_render_operation (GstCairoSink * cairosink,
 
   if (operation == NULL) {
     item->object = NULL;
+  } else if (GST_IS_QUERY (operation)) {
+    /* When it's a query, the caller keeps the ownership until we return. We
+     * do not refcount it more so that its structure remains mutable */
+    item->object = operation;
   } else {
     item->object = gst_mini_object_ref (operation);
   }
@@ -784,8 +819,8 @@ gst_cairo_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
   if (need_pool && cairosink->buffer_pool) {
     gst_query_add_allocation_pool (query, cairosink->buffer_pool, size, 2, 0);
     GST_DEBUG_OBJECT (cairosink,
-        "adding pool %" GST_PTR_FORMAT " to query %" GST_PTR_FORMAT,
-        cairosink->buffer_pool, query);
+        "adding pool %" GST_PTR_FORMAT " to query %" GST_PTR_FORMAT " (%p)",
+        cairosink->buffer_pool, query, query);
 
     ret = TRUE;
   }
@@ -799,8 +834,8 @@ gst_cairo_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
     gst_query_add_allocation_param (query,
         GST_ALLOCATOR (cairosink->allocator), &params);
     GST_DEBUG_OBJECT (cairosink,
-        "adding allocator %" GST_PTR_FORMAT " to query %" GST_PTR_FORMAT,
-        cairosink->allocator, query);
+        "adding allocator %" GST_PTR_FORMAT " to query %" GST_PTR_FORMAT
+        " (%p)", cairosink->allocator, query, query);
     ret = TRUE;
   }
 
@@ -846,32 +881,76 @@ static GstMemory *
 gst_cairo_allocator_alloc (GstAllocator * allocator, gsize size,
     GstAllocationParams * params)
 {
-  GstCairoMemory *mem;
   GstCairoAllocator *cairo_allocator = (GstCairoAllocator *) allocator;
-  GstCairoBackend *backend;
-  GstStructure *structure;
+  GstStructure *query_structure, *caps_structure;
+  GstQuery *query;
   int width, height, stride;
+  GstFlowReturn ret;
+  const GValue *value;
+  GstMemory *mem;
 
-  backend = cairo_allocator->sink->backend;
+  caps_structure = gst_caps_get_structure (cairo_allocator->sink->caps, 0);
 
-  structure = gst_caps_get_structure (cairo_allocator->sink->caps, 0);
-
-  if (!gst_structure_get_int (structure, "width", &width)
-      || !gst_structure_get_int (structure, "height", &height)) {
+  if (!gst_structure_get_int (caps_structure, "width", &width)
+      || !gst_structure_get_int (caps_structure, "height", &height)) {
     GST_WARNING_OBJECT (cairo_allocator->sink, "No proper caps set");
     return NULL;
   }
 
+  stride = cairo_format_stride_for_width (CAIRO_FORMAT_RGB24, width);
+
+  query_structure = gst_structure_new ("cairosink-allocate-surface",
+      "width", G_TYPE_INT, width,
+      "height", G_TYPE_INT, height, "stride", G_TYPE_INT, stride, NULL);
+
+  query = gst_query_new_custom (GST_QUERY_CUSTOM, query_structure);
+
+  ret = gst_cairo_sink_sync_render_operation (cairo_allocator->sink,
+      GST_MINI_OBJECT_CAST (query));
+
+  GST_TRACE_OBJECT (cairo_allocator->sink,
+      "render operation returned %s, %p %" GST_PTR_FORMAT,
+      gst_flow_get_name (ret), query, query);
+
+  if (ret != GST_FLOW_OK
+      || !gst_structure_has_field (query_structure, "memory"))
+    goto beach;
+
+  value = gst_structure_get_value (query_structure, "memory");
+  mem = GST_MEMORY_CAST (g_value_get_pointer (value));
+
+beach:
+  if (!mem) {
+    GST_WARNING_OBJECT (cairo_allocator->sink, "Could not allocate");
+    /* FIXME: provide fallback */
+  }
+
+  gst_query_unref (query);
+
+  GST_TRACE_OBJECT (cairo_allocator->sink, "Returning memory %" GST_PTR_FORMAT,
+      mem);
+  return mem;
+}
+
+static GstMemory *
+gst_cairo_allocator_do_alloc (GstCairoAllocator * allocator, gint width,
+    gint height, gint stride)
+{
+  GstCairoMemory *mem;
+  GstCairoBackend *backend;
+
+  backend = allocator->sink->backend;
+
   mem = g_slice_new (GstCairoMemory);
 
-  stride = cairo_format_stride_for_width (CAIRO_FORMAT_RGB24, width);
   gst_memory_init (GST_MEMORY_CAST (mem), 0, GST_ALLOCATOR_CAST (allocator),
       NULL, stride * height, 0, 0, stride * height);
 
-  mem->surface = backend->create_surface (backend,
-      cairo_allocator->sink->device, stride, height, &mem->surface_info);
+  mem->surface = backend->create_surface (backend, allocator->sink->device,
+      stride, height, &mem->surface_info);
   mem->backend = backend;
 
+  GST_TRACE_OBJECT (allocator->sink, "Created memory %" GST_PTR_FORMAT, mem);
   return GST_MEMORY_CAST (mem);
 }
 
