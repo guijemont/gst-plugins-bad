@@ -1016,10 +1016,10 @@ gst_cairo_allocator_do_alloc (GstCairoAllocator * allocator, gint width,
   mem = g_slice_new (GstCairoMemory);
 
   gst_memory_init (GST_MEMORY_CAST (mem), 0, GST_ALLOCATOR_CAST (allocator),
-      NULL, stride * height, 0, 0, stride * height);
+      NULL, width * height * 3, 0, 0, width * height * 3);
 
   mem->surface = backend->create_surface (backend, allocator->sink->device,
-      stride, height, &mem->surface_info);
+      width, height, &mem->surface_info);
   mem->backend = backend;
 
   GST_TRACE_OBJECT (allocator->sink, "Created memory %" GST_PTR_FORMAT, mem);
