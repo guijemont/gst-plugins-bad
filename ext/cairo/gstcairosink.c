@@ -68,6 +68,32 @@
 #include "gstcairosink.h"
 #include "gstcairobackend.h"
 
+#ifdef CAIROSINK_GL_DEBUG
+#define GL_GLEXT_PROTOTYPES
+#include <GL/gl.h>
+#include <GL/glx.h>
+
+static inline void
+_gl_debug (const char *function, const char *message)
+{
+#ifdef GL_GREMEDY_string_marker
+  gchar *full_message = g_strdup_printf ("%s: %s", function, message);
+
+  glStringMarkerGREMEDY (0, full_message);
+  GST_TRACE (message);
+
+  g_free (full_message);
+#endif
+}
+
+#define gl_debug(message) _gl_debug(__func__, message)
+#define gl_debug_frame_terminator glFrameTerminatorGREMEDY
+#else
+#define gl_debug GST_TRACE
+#define gl_debug_frame_terminator()
+#endif
+
+
 #include <cairo-gl.h>
 
 GST_DEBUG_CATEGORY (gst_cairo_sink_debug_category);
@@ -551,7 +577,9 @@ upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
 
     context = cairo_create (cairosink->surface);
     cairo_set_source_surface (context, mem->surface, 0, 0);
+    gl_debug ("cairo_paint()");
     cairo_paint (context);
+    gl_debug ("cairo_paint() done");
     cairo_destroy (context);
 
     GST_TRACE_OBJECT (cairosink,
@@ -744,7 +772,9 @@ gst_cairo_sink_source_dispatch (GSource * source,
   } else if (GST_IS_BUFFER (object)) {
     GstBuffer *buf = GST_BUFFER_CAST (object);
 
+    gl_debug ("about to upload buffer");
     cairosink->last_ret = upload_buffer (cairosink, buf);
+    gl_debug ("upload_buffer finished");
 
   } else if (!object) {
     cairosink->backend->show (cairosink->surface);

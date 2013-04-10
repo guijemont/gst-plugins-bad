@@ -1,11 +1,36 @@
+#include <glib.h>
+#include <gst/gst.h>
+
 #define GL_GLEXT_PROTOTYPES
 #include <GL/gl.h>
 #include <GL/glx.h>
 
+#ifdef CAIROSINK_GL_DEBUG
+
+static inline void
+_gl_debug (const char *function, const char *message)
+{
+#ifdef GL_GREMEDY_string_marker
+  gchar *full_message = g_strdup_printf ("%s: %s", function, message);
+
+  glStringMarkerGREMEDY (0, full_message);
+  GST_TRACE (message);
+
+  g_free (full_message);
+#endif
+}
+
+#define gl_debug(message) _gl_debug(__func__, message)
+#else
+#define gl_debug GST_TRACE
+#endif
+
 #include <cairo-gl.h>
 
 #include "gstcairobackendglx.h"
-#include <gst/gst.h>
+
+GST_DEBUG_CATEGORY_EXTERN (gst_cairo_sink_debug_category);
+#define GST_CAT_DEFAULT gst_cairo_sink_debug_category
 
 static cairo_surface_t *gst_cairo_backend_glx_create_display_surface (gint
     width, gint height);
@@ -19,6 +44,8 @@ static gpointer gst_cairo_backend_glx_surface_map (cairo_surface_t * surface,
     GstCairoBackendSurfaceInfo * surface_info, GstMapFlags flags);
 static void gst_cairo_backend_glx_surface_unmap (cairo_surface_t * surface,
     GstCairoBackendSurfaceInfo * surface_info);
+
+static void gst_cairo_backend_glx_show (cairo_surface_t * surface);
 
 typedef struct
 {
@@ -54,10 +81,15 @@ static int singleSampleAttributes[] = {
   None
 };
 
+
 GstCairoBackend *
 gst_cairo_backend_glx_new (void)
 {
-  GstCairoBackend *backend = g_slice_new (GstCairoBackend);
+  GstCairoBackend *backend;
+
+  gl_debug ("GLX: Creating backend");
+
+  backend = g_slice_new (GstCairoBackend);
 
   backend->create_display_surface =
       gst_cairo_backend_glx_create_display_surface;
@@ -65,17 +97,27 @@ gst_cairo_backend_glx_new (void)
   backend->destroy_surface = gst_cairo_backend_glx_destroy_surface;
   backend->surface_map = gst_cairo_backend_glx_surface_map;
   backend->surface_unmap = gst_cairo_backend_glx_surface_unmap;
-  backend->show = cairo_gl_surface_swapbuffers;
+  backend->show = gst_cairo_backend_glx_show;
   backend->need_own_thread = TRUE;
   backend->can_map = TRUE;
 
+  gl_debug ("exit");
   return backend;
+}
+
+void
+gst_cairo_backend_glx_show (cairo_surface_t * surface)
+{
+  gl_debug ("swapping buffers");
+  cairo_gl_surface_swapbuffers (surface);
 }
 
 void
 gst_cairo_backend_glx_destroy (GstCairoBackend * backend)
 {
+  gl_debug ("GLX: Destroying backend");
   g_slice_free (GstCairoBackend, backend);
+  gl_debug ("exit");
 }
 
 static Display *
@@ -114,6 +156,8 @@ gst_cairo_backend_glx_create_display_surface (int width, int height)
   cairo_device_t *device;
   cairo_surface_t *surface;
   int num_returned = 0;
+
+  gl_debug ("GLX: creating display window and surface");
 
   display = get_display ();
   if (!display)
@@ -158,6 +202,7 @@ gst_cairo_backend_glx_create_display_surface (int width, int height)
   device = cairo_glx_device_create (get_display (), glx_context);
   surface = cairo_gl_surface_create_for_window (device, window, width, height);
 
+  gl_debug ("exit");
   return surface;
 }
 
@@ -170,6 +215,8 @@ gst_cairo_backend_glx_create_surface (GstCairoBackend * backend,
       g_slice_new (GstCairoBackendGLXSurfaceInfo);
   GstCairoBackendSurfaceInfo *surface_info;
   cairo_surface_t *surface;
+
+  gl_debug ("GLX: create surface");
 
   surface_info = (GstCairoBackendSurfaceInfo *) glx_surface_info;
   surface_info->backend = backend;
@@ -203,6 +250,7 @@ gst_cairo_backend_glx_create_surface (GstCairoBackend * backend,
       glx_surface_info->texture, width, height);
   *_surface_info = surface_info;
 
+  gl_debug ("exit");
   return surface;
 }
 
@@ -213,6 +261,8 @@ gst_cairo_backend_glx_destroy_surface (cairo_surface_t * surface,
   GstCairoBackendGLXSurfaceInfo *glx_surface_info =
       (GstCairoBackendGLXSurfaceInfo *) surface_info;
   cairo_device_t *device;
+
+  gl_debug ("GLX: destroy surface");
 
   device = cairo_surface_get_device (surface);
 
@@ -226,6 +276,7 @@ gst_cairo_backend_glx_destroy_surface (cairo_surface_t * surface,
   cairo_device_release (device);
 
   g_slice_free (GstCairoBackendGLXSurfaceInfo, glx_surface_info);
+  gl_debug ("exit");
 }
 
 static gpointer
@@ -242,6 +293,8 @@ gst_cairo_backend_glx_surface_map (cairo_surface_t * surface,
     return NULL;
   }
 
+  gl_debug ("GLX: map surface");
+
   glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->pbo);
 
   /* We put a NULL buffer so that GL discards the current buffer if it is
@@ -254,6 +307,7 @@ gst_cairo_backend_glx_surface_map (cairo_surface_t * surface,
 
   glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, 0);
 
+  gl_debug ("exit");
   return data_area;
 }
 
@@ -266,6 +320,8 @@ gst_cairo_backend_glx_surface_unmap (cairo_surface_t * surface,
 
   /* FIXME: how/when do we know that the transfer is done? */
 
+  gl_debug ("GLX: unmap surface");
+
   glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->pbo);
   glUnmapBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB);
 
@@ -276,5 +332,5 @@ gst_cairo_backend_glx_surface_unmap (cairo_surface_t * surface,
 
   glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, 0);
   glBindTexture (GL_TEXTURE_2D, 0);
-
+  gl_debug ("exit");
 }
