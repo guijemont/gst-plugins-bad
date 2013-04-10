@@ -748,7 +748,6 @@ gst_cairo_sink_source_dispatch (GSource * source,
 
   } else if (!object) {
     cairosink->backend->show (cairosink->surface);
-    cairo_gl_surface_swapbuffers (cairosink->surface);
   }
 
   item->destroy (item);
