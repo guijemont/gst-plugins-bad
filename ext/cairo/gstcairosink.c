@@ -1089,6 +1089,12 @@ gst_cairo_allocator_mem_map (GstMemory * gmem, gsize maxsize, GstMapFlags flags)
   gpointer mapped_area;
   GstFlowReturn ret;
 
+  /* After this, the surface will be modified outside of cairo, so we need to
+   * flush it first */
+  gl_debug ("about to flush");
+  cairo_surface_flush (mem->surface);
+  gl_debug ("done");
+
   query_structure = gst_structure_new ("cairosink-map-surface",
       "surface", G_TYPE_POINTER, mem->surface,
       "surface-info", G_TYPE_POINTER, mem->surface_info,
@@ -1133,6 +1139,11 @@ gst_cairo_allocator_mem_unmap (GstMemory * gmem)
 
   ret = gst_cairo_sink_sync_render_operation (cairo_allocator->sink,
       GST_MINI_OBJECT_CAST (query));
+
+  /* surface has been modified outside of cairo */
+  gl_debug ("About to mark dirty");
+  cairo_surface_mark_dirty (mem->surface);
+  gl_debug ("done");
 
   if (ret != GST_FLOW_OK)
     GST_ERROR_OBJECT (cairo_allocator->sink,
