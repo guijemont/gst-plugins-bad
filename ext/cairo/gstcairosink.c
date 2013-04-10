@@ -651,6 +651,7 @@ gst_cairo_sink_source_dispatch (GSource * source,
       gst_structure_get_int (structure, "height", &caps_height);
       cairosink->surface =
           cairosink->backend->create_display_surface (caps_width, caps_height);
+      cairosink->device = cairo_surface_get_device (cairosink->surface);
     } else {
       GST_TRACE_OBJECT (cairosink, "Already have a surface for these caps");
     }
