@@ -186,7 +186,8 @@ gst_cairo_backend_glx_create_surface (GstCairoBackend * backend,
 
     /* create texture */
     glGenTextures (1, &glx_surface_info->texture);
-    glTexImage2D (glx_surface_info->texture, 0, GL_RGB, width, height, 0,
+    glBindTexture (GL_TEXTURE_2D, glx_surface_info->texture);
+    glTexImage2D (GL_TEXTURE_2D, 0, GL_RGB, width, height, 0,
         GL_RGB, GL_UNSIGNED_BYTE, NULL);
 
     /* create PBO */
