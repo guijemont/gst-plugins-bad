@@ -176,7 +176,7 @@ static GstStaticPadTemplate gst_cairo_sink_sink_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("video/x-raw, format=BGRx")
+    GST_STATIC_CAPS ("video/x-raw, format=RGBA")
     );
 
 
@@ -569,7 +569,7 @@ upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
      * it? */
     cairo_surface_t *source;
     cairo_t *context;
-    gint stride = cairo_format_stride_for_width (CAIRO_FORMAT_RGB24, width);
+    gint stride = cairo_format_stride_for_width (CAIRO_FORMAT_ARGB32, width);
 
     if (stride * height > map_info.size) {
       GST_ERROR_OBJECT (cairosink, "Incompatible stride? width:%d height:%d "
@@ -580,7 +580,7 @@ upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
     }
 
     source = cairo_image_surface_create_for_data (map_info.data,
-        CAIRO_FORMAT_RGB24, width, height, stride);
+        CAIRO_FORMAT_ARGB32, width, height, stride);
 
     context = cairo_create (cairosink->surface);
     cairo_set_source_surface (context, source, 0, 0);
@@ -846,7 +846,7 @@ _compute_padding (GstCairoSink * sink)
       || gst_structure_get_int (structure, "height", &height))
     return 0;
 
-  stride = cairo_format_stride_for_width (CAIRO_FORMAT_RGB24, width);
+  stride = cairo_format_stride_for_width (CAIRO_FORMAT_ARGB32, width);
 
   return (stride - width) * height;
 }
@@ -871,7 +871,7 @@ gst_cairo_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
   structure = gst_caps_get_structure (cairosink->caps, 0);
   if (gst_structure_get_int (structure, "width", &width)
       && gst_structure_get_int (structure, "height", &height))
-    size = width * height * 3;
+    size = width * height * 4;
 
   if (!size) {
     GST_ERROR_OBJECT (cairosink, "No caps or bad caps");
@@ -970,7 +970,7 @@ gst_cairo_allocator_alloc (GstAllocator * allocator, gsize size,
     return NULL;
   }
 
-  stride = cairo_format_stride_for_width (CAIRO_FORMAT_RGB24, width);
+  stride = cairo_format_stride_for_width (CAIRO_FORMAT_ARGB32, width);
 
   query_structure = gst_structure_new ("cairosink-allocate-surface",
       "width", G_TYPE_INT, width,
@@ -1016,7 +1016,7 @@ gst_cairo_allocator_do_alloc (GstCairoAllocator * allocator, gint width,
   mem = g_slice_new (GstCairoMemory);
 
   gst_memory_init (GST_MEMORY_CAST (mem), 0, GST_ALLOCATOR_CAST (allocator),
-      NULL, width * height * 3, 0, 0, width * height * 3);
+      NULL, width * height * 4, 0, 0, width * height * 4);
 
   mem->surface = backend->create_surface (backend, allocator->sink->device,
       width, height, &mem->surface_info);

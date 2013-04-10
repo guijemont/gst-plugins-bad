@@ -179,16 +179,16 @@ gst_cairo_backend_glx_create_surface (GstCairoBackend * backend,
    * texture  */
   cairo_device_acquire (device);
   {
-    /* RGB: 3 bytes per pixel */
-    glx_surface_info->data_size = width * height * 3;
+    /* ARGB: 4 bytes per pixel */
+    glx_surface_info->data_size = width * height * 4;
     glx_surface_info->width = width;
     glx_surface_info->height = height;
 
     /* create texture */
     glGenTextures (1, &glx_surface_info->texture);
     glBindTexture (GL_TEXTURE_2D, glx_surface_info->texture);
-    glTexImage2D (GL_TEXTURE_2D, 0, GL_RGB, width, height, 0,
-        GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
+        GL_UNSIGNED_BYTE, NULL);
 
     /* create PBO */
     glGenBuffersARB (1, &glx_surface_info->pbo);
@@ -272,7 +272,7 @@ gst_cairo_backend_glx_surface_unmap (cairo_surface_t * surface,
   glBindTexture (GL_TEXTURE_2D, glx_surface_info->texture);
   /* copies data from pbo to texture */
   glTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, glx_surface_info->width,
-      glx_surface_info->height, GL_RGB, GL_UNSIGNED_BYTE, 0);
+      glx_surface_info->height, GL_RGBA, GL_UNSIGNED_BYTE, 0);
 
   glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, 0);
   glBindTexture (GL_TEXTURE_2D, 0);
