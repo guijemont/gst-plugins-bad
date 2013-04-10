@@ -226,7 +226,7 @@ gst_cairo_backend_glx_create_surface (GstCairoBackend * backend,
    * texture  */
   cairo_device_acquire (device);
   {
-    /* ARGB: 4 bytes per pixel */
+    /* RGBA: 4 bytes per pixel */
     glx_surface_info->data_size = width * height * 4;
     glx_surface_info->width = width;
     glx_surface_info->height = height;
@@ -234,7 +234,7 @@ gst_cairo_backend_glx_create_surface (GstCairoBackend * backend,
     /* create texture */
     glGenTextures (1, &glx_surface_info->texture);
     glBindTexture (GL_TEXTURE_2D, glx_surface_info->texture);
-    glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA,
+    glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA,
         GL_UNSIGNED_BYTE, NULL);
 
     /* create PBO */
@@ -285,7 +285,7 @@ gst_cairo_backend_glx_surface_map (cairo_surface_t * surface,
 {
   GstCairoBackendGLXSurfaceInfo *glx_surface_info =
       (GstCairoBackendGLXSurfaceInfo *) surface_info;
-
+  cairo_device_t *device = cairo_surface_get_device (surface);
   gpointer data_area;
 
   if (flags != GST_MAP_WRITE) {
@@ -295,6 +295,7 @@ gst_cairo_backend_glx_surface_map (cairo_surface_t * surface,
 
   gl_debug ("GLX: map surface");
 
+  cairo_device_acquire (device);
   glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->pbo);
 
   /* We put a NULL buffer so that GL discards the current buffer if it is
@@ -306,6 +307,7 @@ gst_cairo_backend_glx_surface_map (cairo_surface_t * surface,
   data_area = glMapBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, GL_WRITE_ONLY_ARB);
 
   glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, 0);
+  cairo_device_release (device);
 
   gl_debug ("exit");
   return data_area;
@@ -317,20 +319,24 @@ gst_cairo_backend_glx_surface_unmap (cairo_surface_t * surface,
 {
   GstCairoBackendGLXSurfaceInfo *glx_surface_info =
       (GstCairoBackendGLXSurfaceInfo *) surface_info;
+  cairo_device_t *device = cairo_surface_get_device (surface);
 
   /* FIXME: how/when do we know that the transfer is done? */
 
   gl_debug ("GLX: unmap surface");
 
+  cairo_device_acquire (device);
   glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->pbo);
   glUnmapBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB);
 
   glBindTexture (GL_TEXTURE_2D, glx_surface_info->texture);
   /* copies data from pbo to texture */
   glTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, glx_surface_info->width,
-      glx_surface_info->height, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+      glx_surface_info->height, GL_BGRA, GL_UNSIGNED_BYTE, 0);
 
   glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, 0);
   glBindTexture (GL_TEXTURE_2D, 0);
+  cairo_device_release (device);
+
   gl_debug ("exit");
 }

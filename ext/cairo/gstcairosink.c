@@ -202,7 +202,7 @@ static GstStaticPadTemplate gst_cairo_sink_sink_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("video/x-raw, format=RGBA")
+    GST_STATIC_CAPS ("video/x-raw, format=BGRA")
     );
 
 
@@ -577,6 +577,7 @@ upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
 
     context = cairo_create (cairosink->surface);
     cairo_set_source_surface (context, mem->surface, 0, 0);
+    cairo_set_operator (context, CAIRO_OPERATOR_SOURCE);
     gl_debug ("cairo_paint()");
     cairo_paint (context);
     gl_debug ("cairo_paint() done");
@@ -612,6 +613,7 @@ upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
 
     context = cairo_create (cairosink->surface);
     cairo_set_source_surface (context, source, 0, 0);
+    cairo_set_operator (context, CAIRO_OPERATOR_SOURCE);
     cairo_paint (context);
     cairo_destroy (context);
 
