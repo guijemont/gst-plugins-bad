@@ -578,9 +578,7 @@ upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
     cairo_t *context;
     GstCairoMemory *mem = (GstCairoMemory *) gmem;
 
-    /* mem is already in GPU, we need to force remaining drawing operation
-     * before we can paint the new image */
-    cairo_surface_flush (cairosink->surface);
+    /* mem is already in GPU */
     context = cairo_create (cairosink->surface);
     cairo_set_source_surface (context, mem->surface, 0, 0);
     cairo_set_operator (context, CAIRO_OPERATOR_SOURCE);

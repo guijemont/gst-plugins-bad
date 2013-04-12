@@ -115,6 +115,17 @@ void
 gst_cairo_backend_glx_show (cairo_surface_t * surface)
 {
   gl_debug ("swapping buffers");
+
+  /* XXX: forcing pending drawing.
+   * Calling cairo_surface_flush () on cairo_gl_surface does 
+   * not resolve multisampling on the current surface, application
+   * must call glBlitFrameBuffer if it is supported and the surface
+   * is texture based, or it must call glDisable (GL_MULTISAMPLE) if
+   * application would like to use this surface with direct GL calls.
+   * if application only uses cairo API, then cairo takes care of
+   * resolving multisampling. */
+  cairo_surface_flush (surface);
+
   cairo_gl_surface_swapbuffers (surface);
 }
 
