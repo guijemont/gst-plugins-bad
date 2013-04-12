@@ -389,6 +389,10 @@ gst_cairo_sink_start (GstBaseSink * base_sink)
   if (cairosink->backend == NULL)
     cairosink->backend = gst_cairo_backend_new (cairosink->backend_type);
 
+  /* query_can_map */
+  cairosink->backend->can_map =
+      cairosink->backend->query_can_map (cairosink->surface);
+
   if (cairosink->backend->can_map)
     cairosink->allocator = gst_cairo_allocator_new (cairosink);
 

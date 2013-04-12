@@ -86,6 +86,8 @@ struct _GstCairoBackend
   void (*surface_unmap) (cairo_surface_t * surface,
       GstCairoBackendSurfaceInfo * surface_info);
 
+  gboolean (*query_can_map) (cairo_surface_t *surface);
+
   GstCairoBackendType backend_type;
   gboolean need_own_thread;
   gboolean can_map;

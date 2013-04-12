@@ -1,3 +1,6 @@
+#include <stdlib.h>
+#include <string.h>
+
 #include <glib.h>
 #include <gst/gst.h>
 
@@ -46,6 +49,8 @@ static void gst_cairo_backend_glx_surface_unmap (cairo_surface_t * surface,
     GstCairoBackendSurfaceInfo * surface_info);
 
 static void gst_cairo_backend_glx_show (cairo_surface_t * surface);
+
+static gboolean gst_cairo_backend_glx_query_can_map (cairo_surface_t * surface);
 
 typedef struct
 {
@@ -98,6 +103,7 @@ gst_cairo_backend_glx_new (void)
   backend->surface_map = gst_cairo_backend_glx_surface_map;
   backend->surface_unmap = gst_cairo_backend_glx_surface_unmap;
   backend->show = gst_cairo_backend_glx_show;
+  backend->query_can_map = gst_cairo_backend_glx_query_can_map;
   backend->need_own_thread = TRUE;
   backend->can_map = TRUE;
 
@@ -206,6 +212,112 @@ gst_cairo_backend_glx_create_display_surface (int width, int height)
   return surface;
 }
 
+/* copy from cairo */
+static int
+get_gl_version (void)
+{
+  int major, minor;
+  const char *version = (const char *) glGetString (GL_VERSION);
+  const char *dot = version == NULL ? NULL : strchr (version, '.');
+  const char *major_start = dot;
+
+  if (dot == NULL || dot == version || *(dot + 1) == '\0') {
+    major = 0;
+    minor = 0;
+  } else {
+    while (major_start > version && *major_start != ' ')
+      --major_start;
+    major = strtol (major_start, NULL, 10);
+    minor = strtol (dot + 1, NULL, 10);
+  }
+
+  return GL_VERSION_ENCODE (major, minor);
+}
+
+gboolean
+gst_cairo_backend_glx_query_can_map (cairo_surface_t * surface)
+{
+  Display *display;
+  GLXContext glx_context;
+  int gl_version;
+
+  Window window, root_window;
+  XVisualInfo *visual_info;
+  XSetWindowAttributes window_attributes;
+  GLXFBConfig *fb_configs;
+
+  int num_returned = 0;
+
+  if (surface) {
+    cairo_device_t *device = cairo_surface_get_device (surface);
+    display = cairo_glx_device_get_display (device);
+    glx_context = cairo_glx_device_get_context (device);
+
+    if (!display || !glx_context)
+      return FALSE;
+
+    cairo_device_acquire (device);
+    gl_version = get_gl_version ();
+    cairo_device_release (device);
+    if (gl_version >= GL_VERSION_ENCODE (1, 5))
+      return TRUE;
+
+    return FALSE;
+  }
+
+  display = get_display ();
+  if (!display)
+    return FALSE;
+
+  fb_configs =
+      glXChooseFBConfig (display, DefaultScreen (display),
+      singleSampleAttributes, &num_returned);
+
+  if (fb_configs == NULL) {
+    GST_ERROR ("Unable to create a GL context with appropriate attributes.");
+    /* FIXME: leak? */
+    return FALSE;
+  }
+
+  visual_info = glXGetVisualFromFBConfig (display, fb_configs[0]);
+  root_window = RootWindow (display, visual_info->screen);
+
+  window_attributes.border_pixel = 0;
+  window_attributes.event_mask = StructureNotifyMask;
+  window_attributes.colormap =
+      XCreateColormap (display, root_window, visual_info->visual, AllocNone);
+
+  /* Create the XWindow. */
+  window = XCreateWindow (display, root_window, 0, 0, 1, 1,
+      0, visual_info->depth, InputOutput, visual_info->visual,
+      CWBorderPixel | CWColormap | CWEventMask, &window_attributes);
+
+  glx_context =
+      glXCreateNewContext (display, fb_configs[0], GLX_RGBA_TYPE, NULL, True);
+  XFree (visual_info);
+
+  if (!glx_context) {
+    GST_ERROR ("Unable to create a GL context.");
+    /* FIXME: leak? */
+    return FALSE;
+  }
+
+  /* switch to current context */
+  glXMakeCurrent (display, window, glx_context);
+  gl_version = get_gl_version ();
+
+  /* cleanup */
+  glXMakeCurrent (display, None, None);
+  XDestroyWindow (display, window);
+  glXDestroyContext (display, glx_context);
+  XSync (display, True);
+
+  if (gl_version >= GL_VERSION_ENCODE (1, 5))
+    return TRUE;
+
+  return FALSE;
+}
+
 static cairo_surface_t *
 gst_cairo_backend_glx_create_surface (GstCairoBackend * backend,
     cairo_device_t * device, gint width, gint height,
@@ -238,11 +350,11 @@ gst_cairo_backend_glx_create_surface (GstCairoBackend * backend,
         GL_UNSIGNED_BYTE, NULL);
 
     /* create PBO */
-    glGenBuffersARB (1, &glx_surface_info->pbo);
-    glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->pbo);
-    glBufferDataARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->data_size,
-        NULL, GL_STREAM_DRAW_ARB);
-    glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, 0);
+    glGenBuffers (1, &glx_surface_info->pbo);
+    glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glx_surface_info->pbo);
+    glBufferData (GL_PIXEL_UNPACK_BUFFER, glx_surface_info->data_size,
+        NULL, GL_STREAM_DRAW);
+    glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
   }
   cairo_device_release (device);
 
@@ -270,7 +382,7 @@ gst_cairo_backend_glx_destroy_surface (cairo_surface_t * surface,
 
   cairo_device_acquire (device);
   {
-    glDeleteBuffersARB (1, &glx_surface_info->pbo);
+    glDeleteBuffers (1, &glx_surface_info->pbo);
     glDeleteTextures (1, &glx_surface_info->texture);
   }
   cairo_device_release (device);
@@ -296,17 +408,17 @@ gst_cairo_backend_glx_surface_map (cairo_surface_t * surface,
   gl_debug ("GLX: map surface");
 
   cairo_device_acquire (device);
-  glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->pbo);
+  glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glx_surface_info->pbo);
 
   /* We put a NULL buffer so that GL discards the current buffer if it is
    * still being used, instead of waiting for the end of an operation on it.
-   * Makes sure the call to glMapBufferARB() won't cause a sync */
-  glBufferDataARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->data_size,
-      NULL, GL_STREAM_DRAW_ARB);
+   * Makes sure the call to glMapBuffer() won't cause a sync */
+  glBufferData (GL_PIXEL_UNPACK_BUFFER, glx_surface_info->data_size,
+      NULL, GL_STREAM_DRAW);
 
-  data_area = glMapBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, GL_WRITE_ONLY_ARB);
+  data_area = glMapBuffer (GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
 
-  glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, 0);
+  glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
   cairo_device_release (device);
 
   gl_debug ("exit");
@@ -326,15 +438,15 @@ gst_cairo_backend_glx_surface_unmap (cairo_surface_t * surface,
   gl_debug ("GLX: unmap surface");
 
   cairo_device_acquire (device);
-  glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, glx_surface_info->pbo);
-  glUnmapBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB);
+  glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glx_surface_info->pbo);
+  glUnmapBuffer (GL_PIXEL_UNPACK_BUFFER);
 
   glBindTexture (GL_TEXTURE_2D, glx_surface_info->texture);
   /* copies data from pbo to texture */
   glTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, glx_surface_info->width,
       glx_surface_info->height, GL_BGRA, GL_UNSIGNED_BYTE, 0);
 
-  glBindBufferARB (GL_PIXEL_UNPACK_BUFFER_ARB, 0);
+  glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
   glBindTexture (GL_TEXTURE_2D, 0);
   cairo_device_release (device);
 
