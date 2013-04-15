@@ -254,8 +254,8 @@ if test "x$HAVE_X11" = "xyes"; then
 fi
 
 dnl GLX is optional for cairosink
-AC_CHECK_HEADER([gl/glx.h], [HAVE_GLX=yes], [HAVE_GLX=no])
-dnl AC_CHECK_LIB([GL], [glXCreateContext], [HAVE_GLX=yes], [HAVE_GLX=no])
+AC_CHECK_HEADER([GL/glx.h], [HAVE_GLX=yes], [HAVE_GLX=no])
+AC_CHECK_LIB([GL], [glXCreateContext], [HAVE_GLX=yes], [HAVE_GLX=no])
 AM_CONDITIONAL(HAVE_GLX, [test "x$HAVE_GLX" = "xyes"])
 if test "x$HAVE_GLX" = "xyes"; then
   AC_DEFINE(HAVE_GLX, 1, [Define if you have GLX])
