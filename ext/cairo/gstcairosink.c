@@ -174,8 +174,13 @@ enum
   PROP_MAIN_CONTEXT
 };
 
-/* FIXME: default to xlib if GLX not available */
-#define GST_CAIRO_BACKEND_DEFAULT GST_CAIRO_BACKEND_GL
+#ifdef HAVE_GLX
+#define GST_CAIRO_BACKEND_DEFAULT GST_CAIRO_BACKEND_GLX
+#elif HAVE_EGL
+#define GST_CAIRO_BACKEND_DEFAULT GST_CAIRO_BACKEND_EGL
+#else
+#define GST_CAIRO_BACKEND_DEFAULT GST_CAIRO_BACKEND_XLIB
+#endif
 
 #define GST_CAIRO_BACKEND_TYPE (gst_cairo_backend_get_type())
 static GType
@@ -184,12 +189,9 @@ gst_cairo_backend_get_type (void)
   static GType backend_type = 0;
 
   static const GEnumValue backend_values[] = {
-#ifdef HAVE_GLX
-    {GST_CAIRO_BACKEND_GL, "Use OpenGL and GLX", "glx"},
-#elif HAVE_EGL
-    {GST_CAIRO_BACKEND_GL, "Use OpenGLES and EGL", "egl"},
-#endif
+    {GST_CAIRO_BACKEND_GLX, "Use OpenGL and GLX", "glx"},
     {GST_CAIRO_BACKEND_XLIB, "Use Xlib", "xlib"},
+    {GST_CAIRO_BACKEND_EGL, "Use OpenGLES and EGL", "egl"},
     {0, NULL, NULL}
   };
 
@@ -244,8 +246,7 @@ gst_cairo_sink_class_init (GstCairoSinkClass * klass)
           "Cairo backend to use",
           "Cairo backend to use",
           GST_CAIRO_BACKEND_TYPE,
-          GST_CAIRO_BACKEND_DEFAULT,
-          G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+          GST_CAIRO_BACKEND_DEFAULT, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_MAIN_CONTEXT,
       g_param_spec_boxed ("main-context",
           "GMainContext to use for graphic calls",
@@ -265,6 +266,7 @@ gst_cairo_sink_init (GstCairoSink * cairosink)
   cairosink->owns_surface = TRUE;
   cairosink->sinkpad =
       gst_pad_new_from_static_template (&gst_cairo_sink_sink_template, "sink");
+  cairosink->backend_type = GST_CAIRO_BACKEND_DEFAULT;
 }
 
 void

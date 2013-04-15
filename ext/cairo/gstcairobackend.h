@@ -65,8 +65,9 @@ typedef struct _GstCairoBackendSurfaceInfo GstCairoBackendSurfaceInfo;
 
 typedef enum
 {
-  GST_CAIRO_BACKEND_GL = 1,
-  GST_CAIRO_BACKEND_XLIB = 2
+  GST_CAIRO_BACKEND_GLX = 1,
+  GST_CAIRO_BACKEND_XLIB = 2,
+  GST_CAIRO_BACKEND_EGL = 3,
 } GstCairoBackendType;
 #define GST_CAIRO_BACKEND_LAST 2
 

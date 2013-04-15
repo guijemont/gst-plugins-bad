@@ -49,7 +49,8 @@
 #include "config.h"
 #ifdef HAVE_GLX
 #include "gstcairobackendglx.h"
-#elif HAVE_EGL
+#endif
+#if HAVE_EGL
 #include "gstcairobackendegl.h"
 #endif
 
@@ -61,13 +62,16 @@ gst_cairo_backend_new (GstCairoBackendType backend_type)
   GstCairoBackend *backend = NULL;
 
   switch (backend_type) {
-    case GST_CAIRO_BACKEND_GL:
 #ifdef HAVE_GLX
+    case GST_CAIRO_BACKEND_GLX:
       backend = gst_cairo_backend_glx_new ();
-#elif HAVE_EGL
-      backend = gst_cairo_backend_egl_new ();
-#endif
       break;
+#endif
+#ifdef HAVE_EGL:
+    case GST_CAIRO_BACKEND_EGL:
+      backend = gst_cairo_backend_egl_new ();
+      break;
+#endif
     default:
       GST_ERROR ("Unhandled backend type: %d", backend_type);
   }
@@ -81,13 +85,16 @@ void
 gst_cairo_backend_destroy (GstCairoBackend * backend)
 {
   switch (backend->backend_type) {
-    case GST_CAIRO_BACKEND_GL:
-#ifdef HAVE_GLX
+#ifdef HAVE_GLX:
+    case GST_CAIRO_BACKEND_GLX:
       gst_cairo_backend_glx_destroy (backend);
-#elif HAVE_EGL
-      gst_cairo_backend_egl_destroy (backend);
-#endif
       break;
+#endif
+#if HAVE_EGL
+    case GST_CAIRO_BACKEND_EGL:
+      gst_cairo_backend_egl_destroy (backend);
+      break;
+#endif
     default:
       GST_ERROR ("Unhandled backend type: %d", backend->backend_type);
   }
