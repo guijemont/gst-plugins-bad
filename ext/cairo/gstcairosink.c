@@ -952,8 +952,9 @@ gst_cairo_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
 
     cairosink->buffer_pool = gst_buffer_pool_new ();
     config = gst_buffer_pool_get_config (cairosink->buffer_pool);
-    gst_buffer_pool_config_set_allocator (config,
-        GST_ALLOCATOR (cairosink->allocator), NULL);
+    if (cairosink->allocator)
+      gst_buffer_pool_config_set_allocator (config,
+          GST_ALLOCATOR (cairosink->allocator), NULL);
     gst_buffer_pool_config_set_params (config, cairosink->caps, size, 2, 0);
     gst_buffer_pool_set_config (cairosink->buffer_pool, config);
   }
