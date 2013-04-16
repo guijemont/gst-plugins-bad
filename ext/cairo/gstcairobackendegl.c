@@ -15,6 +15,8 @@ static cairo_surface_t *gst_cairo_backend_egl_create_surface (cairo_device_t *
 static void gst_cairo_backend_egl_get_size (cairo_surface_t * surface,
     gint * width, gint * height);
 
+static gboolean gst_cairo_backend_egl_query_can_map (cairo_surface_t * surface);
+
 static EGLint multisampleAttributes[] = {
   EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
   EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
@@ -48,6 +50,7 @@ gst_cairo_backend_egl_new (void)
   backend->show = cairo_gl_surface_swapbuffers;
   backend->need_own_thread = TRUE;
   backend->get_size = gst_cairo_backend_egl_get_size;
+  backend->query_can_map = gst_cairo_backend_egl_query_can_map;
 
   return backend;
 }
@@ -168,4 +171,11 @@ gst_cairo_backend_egl_get_size (cairo_surface_t * surface, gint * width,
 {
   *width = cairo_gl_surface_get_width (surface);
   *height = cairo_gl_surface_get_height (surface);
+}
+
+static gboolean
+gst_cairo_backend_egl_query_can_map (cairo_surface_t * surface)
+{
+  /* map not implemented yet */
+  return FALSE;
 }
