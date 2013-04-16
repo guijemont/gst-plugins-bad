@@ -34,8 +34,6 @@ static EGLint singleSampleAttributes[] = {
   EGL_GREEN_SIZE, 1,
   EGL_BLUE_SIZE, 1,
   EGL_STENCIL_SIZE, 1,
-  EGL_SAMPLES, 4,
-  EGL_SAMPLE_BUFFERS, 1,
   EGL_NONE
 };
 
@@ -117,7 +115,7 @@ gst_cairo_backend_egl_create_display_surface (gint width, gint height,
     goto CLEANUP_DISPLAY;
 
   if (!eglChooseConfig (egl_display, multisampleAttributes, &egl_config,
-          1, &num)) {
+          1, &num) || num == 0) {
     if (!eglChooseConfig (egl_display, singleSampleAttributes, &egl_config,
             1, &num))
       goto CLEANUP_DISPLAY;
