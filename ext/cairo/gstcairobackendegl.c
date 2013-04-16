@@ -150,6 +150,7 @@ CLEANUP_CONTEXT:
 CLEANUP_DISPLAY:
   eglTerminate (egl_display);
 CLEANUP_X:
+  GST_WARNING ("Could not initialise EGL context correctly");
   XDestroyWindow (display, window);
   XCloseDisplay (display);
   return NULL;
