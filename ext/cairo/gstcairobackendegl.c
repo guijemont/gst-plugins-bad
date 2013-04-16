@@ -8,10 +8,11 @@
 
 #include <glib.h>
 
-static gboolean gst_cairo_backend_egl_create_display_surface (gint
-    width, gint height, cairo_device_t ** device, cairo_surface_t ** surface);
-static cairo_surface_t *gst_cairo_backend_egl_create_surface (cairo_device_t *
-    device, gint width, gint height);
+static cairo_surface_t *gst_cairo_backend_egl_create_display_surface (gint
+    width, gint height);
+static cairo_surface_t *gst_cairo_backend_egl_create_surface (GstCairoBackend *
+    backend, cairo_device_t * device, gint width, gint height,
+    GstCairoBackendSurfaceInfo ** surface_info);
 static void gst_cairo_backend_egl_get_size (cairo_surface_t * surface,
     gint * width, gint * height);
 
@@ -77,9 +78,8 @@ get_display (void)
 }
 
 /* Mostly cut and paste from glx-utils.c in cairo-gl-smoke-tests */
-static gboolean
-gst_cairo_backend_egl_create_display_surface (gint width, gint height,
-    cairo_device_t ** device, cairo_surface_t ** surface)
+static cairo_surface_t *
+gst_cairo_backend_egl_create_display_surface (gint width, gint height)
 {
   Window window;
   Display *display;
@@ -143,9 +143,7 @@ gst_cairo_backend_egl_create_display_surface (gint width, gint height,
   cairo_surface = cairo_gl_surface_create_for_egl (cairo_device, egl_surface,
       width, height);
 
-  *surface = cairo_surface;
-  *device = cairo_device;
-  return TRUE;
+  return cairo_surface;
 
 CLEANUP_CONTEXT:
   eglDestroyContext (egl_display, egl_context);
@@ -154,13 +152,20 @@ CLEANUP_DISPLAY:
 CLEANUP_X:
   XDestroyWindow (display, window);
   XCloseDisplay (display);
-  return FALSE;
+  return NULL;
 }
 
 static cairo_surface_t *
-gst_cairo_backend_egl_create_surface (cairo_device_t * device, gint width,
-    gint height)
+gst_cairo_backend_egl_create_surface (GstCairoBackend * backend,
+    cairo_device_t * device, gint width, gint height,
+    GstCairoBackendSurfaceInfo ** surface_info)
 {
+  if (!surface_info)
+    return NULL;
+
+  *surface_info = g_slice_new (GstCairoBackendSurfaceInfo);
+
+  (*surface_info)->backend = backend;
 
   return cairo_gl_surface_create (device, CAIRO_CONTENT_COLOR, width, height);
 }
