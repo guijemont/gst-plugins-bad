@@ -254,18 +254,38 @@ if test "x$HAVE_X11" = "xyes"; then
 fi
 
 dnl GLX is optional for cairosink
-AC_CHECK_HEADER([GL/glx.h], [HAVE_GLX=yes], [HAVE_GLX=no])
-AC_CHECK_LIB([GL], [glXCreateContext], [HAVE_GLX=yes], [HAVE_GLX=no])
-AM_CONDITIONAL(HAVE_GLX, [test "x$HAVE_GLX" = "xyes"])
-if test "x$HAVE_GLX" = "xyes"; then
-  AC_DEFINE(HAVE_GLX, 1, [Define if you have GLX])
+PKG_CHECK_MODULES(CAIRO_GLX, cairo-glx, HAVE_CAIRO_GLX=yes, HAVE_CAIRO_GLX=no)
+AC_SUBST(CAIRO_GLX_LIBS)
+AC_SUBST(CAIRO_GLX_CFLAGS)
+AC_SUBST(HAVE_CAIRO_GLX)
+if test "x$HAVE_CAIRO_GLX" = "xyes"; then
+  USE_CAIRO_GLX=yes
+  AC_DEFINE(USE_CAIRO_GLX, [1], [Define whether to build glx backend for cairosink])
+fi
+AM_CONDITIONAL(USE_CAIRO_GLX, test "x$HAVE_CAIRO_GLX" = "xyes")
+
+PKG_CHECK_MODULES(CAIRO_EGL, cairo-egl, HAVE_CAIRO_EGL=yes, HAVE_CAIRO_EGL=no)
+AC_SUBST(CAIRO_EGL_LIBS)
+AC_SUBST(CAIRO_EGL_CFLAGS)
+AC_SUBST(HAVE_CAIRO_EGL)
+if test "x$HAVE_CAIRO_EGL" = "xyes"; then
+  AC_DEFINE(HAVE_CAIRO_EGL, [1], [Define if you have cairo-egl])
 fi
 
-AC_CHECK_HEADER([EGL/egl.h], [HAVE_EGL=yes], [HAVE_EGL=no])
-AM_CONDITIONAL(HAVE_EGL, [test "x$HAVE_EGL" = "xyes"])
-if test "x$HAVE_EGL" = "xyes"; then
-  AC_DEFINE(HAVE_EGL, 1, [Define if you have EGL])
+PKG_CHECK_MODULES(CAIRO_GLESV2, cairo-glesv2, HAVE_CAIRO_GLESV2=yes, HAVE_CAIRO_GLESV2=no)
+AC_SUBST(CAIRO_GLESV2_LIBS)
+AC_SUBST(CAIRO_GLESV2_CFLAGS)
+AC_SUBST(HAVE_CAIRO_GLESV2)
+if test "x$HAVE_CAIRO_GLESV2" = "xyes"; then
+  AC_DEFINE(HAVE_CAIRO_GLESV2, 1, [Define if you have cairo-glesv2])
 fi
+
+dnl we need both egl and glesv2 for the egl back end to work
+if test "x$HAVE_CAIRO_EGL" = "xyes" -a "x$HAVE_CAIRO_GLESV2" = "xyes" ; then
+  USE_CAIRO_EGL=yes
+  AC_DEFINE(USE_CAIRO_EGL, [1], [Define whether to build egl backend for cairosink])
+fi
+AM_CONDITIONAL(USE_CAIRO_EGL, test "x$USE_CAIRO_EGL" = "xyes" )
 
 dnl exif (used on jifmux tests) ****
 PKG_CHECK_MODULES(EXIF, libexif >= 0.6.16, HAVE_EXIF="yes", HAVE_EXIF="no")
