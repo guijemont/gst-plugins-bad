@@ -624,7 +624,7 @@ upload_buffer (GstCairoSink * cairosink, GstBuffer * buf)
 
     if (stride * height > map_info.size) {
       GST_ERROR_OBJECT (cairosink, "Incompatible stride? width:%d height:%d "
-          "expected stride: %d expected size: %d actual size: %d",
+          "expected stride: %d expected size: %d actual size: %ld",
           width, height, stride, stride * height, map_info.size);
       gst_memory_unmap (gmem, &map_info);
       return GST_FLOW_ERROR;
