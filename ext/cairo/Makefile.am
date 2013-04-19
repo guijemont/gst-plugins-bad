@@ -4,8 +4,7 @@ noinst_HEADERS = \
 	gstcairosink.h
 libgstcairobad_la_SOURCES = \
 	gstcairobad.c \
-	gstcairosink.c \
-	gstcairobackend.c
+	gstcairosink.c
 libgstcairobad_la_CFLAGS = \
 	$(GST_PLUGINS_BASE_CFLAGS) \
 	$(GST_BASE_CFLAGS) \
@@ -16,14 +15,25 @@ libgstcairobad_la_LIBADD = \
 libgstcairobad_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
 libgstcairobad_la_LIBTOOLFLAGS = --tag=disable-static
 
+if USE_CAIRO_GL
+libgstcairobad_la_SOURCES += gstcairobackendgl.c
+libgstcairobad_la_CFLAGS += $(CAIRO_GL_CFLAGS)
+libgstcairobad_la_LIBADD += $(CAIRO_GL_LIBS)
+else
+if USE_CAIRO_GLESV2
+libgstcairobad_la_SOURCES += gstcairobackendgl.c
+libgstcairobad_la_CFLAGS += $(CAIRO_GLESV2_CFLAGS)
+libgstcairobad_la_LIBADD += $(CAIRO_GLESV2_LIBS)
+endif
+endif
 
-if USE_CAIRO_GLX
-libgstcairobad_la_SOURCES += gstcairobackendglx.c
+if HAVE_CAIRO_GLX
+libgstcairobad_la_SOURCES += gstcairosystemglx.c
 libgstcairobad_la_CFLAGS += $(CAIRO_GLX_CFLAGS)
 libgstcairobad_la_LIBADD += $(CAIRO_GLX_LIBS)
 endif
-if USE_CAIRO_EGL
-libgstcairobad_la_SOURCES += gstcairobackendegl.c
-libgstcairobad_la_CFLAGS += $(CAIRO_GLESV2_CFLAGS) $(CAIRO_EGL_CFLAGS)
-libgstcairobad_la_LIBADD += $(CAIRO_GLESV2_LIBS) $(CAIRO_EGL_LIBS)
+if HAVE_CAIRO_EGL
+libgstcairobad_la_SOURCES += gstcairosystemegl.c
+libgstcairobad_la_CFLAGS += $(CAIRO_EGL_CFLAGS)
+libgstcairobad_la_LIBADD += $(CAIRO_EGL_LIBS)
 endif

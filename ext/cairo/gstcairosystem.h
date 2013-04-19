@@ -45,76 +45,25 @@
  * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  */
+#ifndef _GST_CAIRO_SYSTEM_H_
+#define _GST_CAIRO_SYSTEM_H_
 
-#ifndef _GST_CAIRO_SINK_H_
-#define _GST_CAIRO_SINK_H_
-
-#include <gst/video/gstvideosink.h>
-#include <gst/base/gstdataqueue.h>
-
+#include <glib.h>
 #include <cairo.h>
-#include <cairo-gobject.h>
-#include "gstcairobackend.h"
-#include "gstcairosystem.h"
 
-G_BEGIN_DECLS
-#define GST_TYPE_CAIRO_SINK   (gst_cairo_sink_get_type())
-#define GST_CAIRO_SINK(obj)   (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_CAIRO_SINK,GstCairoSink))
-#define GST_CAIRO_SINK_CLASS(klass)   (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_CAIRO_SINK,GstCairoSinkClass))
-#define GST_IS_CAIRO_SINK(obj)   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_CAIRO_SINK))
-#define GST_IS_CAIRO_SINK_CLASS(obj)   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_CAIRO_SINK))
-typedef struct _GstCairoSink GstCairoSink;
-typedef struct _GstCairoSinkClass GstCairoSinkClass;
+typedef struct _GstCairoSystem GstCairoSystem;
 
-typedef struct _GstCairoMemory GstCairoMemory;
-
-typedef struct _GstCairoAllocator GstCairoAllocator;
-
-struct _GstCairoSink
+typedef enum
 {
-  GstVideoSink base_cairosink;
+    GST_CAIRO_SYSTEM_EGL = 1,
+    GST_CAIRO_SYSTEM_GLX = 2,
+} GstCairoSystemType;
+#define GST_CAIRO_SYSTEM_LAST 2
 
-  GstPad *sinkpad;
-  GstCaps *caps;
-
-  GstCairoBackendType backend_type;
-  GstCairoBackend *backend;
+struct _GstCairoSystem {
+  cairo_surface_t *(*create_display_surface) (gint width, gint height);
+  gboolean (*query_can_map) (cairo_surface_t *surface);
   GstCairoSystemType system_type;
-  GstCairoSystem *system;
-  GMainContext *render_main_context;
-  GThread *thread;
-  GMainLoop *loop;
-  GSource *source;
-  GstDataQueue *queue;
-
-  GMutex render_mutex;
-  GCond render_cond;
-  cairo_surface_t *surface;
-  gboolean owns_surface;
-  cairo_device_t *device;
-  GstFlowReturn last_ret;
-  GstMiniObject *last_finished_operation;
-
-  GstCairoAllocator *allocator;
-  GstBufferPool *buffer_pool;
 };
 
-struct _GstCairoSinkClass
-{
-  GstVideoSinkClass base_cairosink_class;
-};
-
-struct _GstCairoMemory
-{
-  GstMemory parent;
-
-  GstCairoBackend *backend;
-
-  cairo_surface_t *surface;
-  GstCairoBackendSurfaceInfo *surface_info;
-};
-
-GType gst_cairo_sink_get_type (void);
-
-G_END_DECLS
-#endif
+#endif /* _GST_CAIRO_SYSTEM_H_ */

@@ -65,36 +65,29 @@
 
 #include <gst/gst.h>
 #include <gst/video/gstvideosink.h>
-#include "gstcairosink.h"
-#include "gstcairobackend.h"
-
-#ifdef CAIROSINK_GL_DEBUG
-#define GL_GLEXT_PROTOTYPES
-#include <GL/gl.h>
-#include <GL/glx.h>
-
-static inline void
-_gl_debug (const char *function, const char *message)
-{
-#ifdef GL_GREMEDY_string_marker
-  gchar *full_message = g_strdup_printf ("%s: %s", function, message);
-
-  glStringMarkerGREMEDY (0, full_message);
-  GST_TRACE (message);
-
-  g_free (full_message);
-#endif
-}
-
-#define gl_debug(message) _gl_debug(__func__, message)
-#define gl_debug_frame_terminator glFrameTerminatorGREMEDY
-#else
-#define gl_debug GST_TRACE
-#define gl_debug_frame_terminator()
-#endif
-
 
 #include <cairo-gl.h>
+
+#include "gstcairosink.h"
+#include "gstcairobackend.h"
+#include "gstcairogldebug.h"
+
+#if defined(USE_CAIRO_GL) || defined(USE_CAIRO_GLESV2)
+#include "gstcairobackendgl.h"
+#else
+#error "Need one of cairo-gl or cairo-glesv2, other backends not implemented"
+#endif
+
+#ifdef HAVE_CAIRO_EGL
+#include "gstcairosystemegl.h"
+#endif
+#ifdef HAVE_CAIRO_GLX
+#include "gstcairosystemglx.h"
+#endif
+
+#if !(defined(HAVE_CAIRO_EGL) || defined (HAVE_CAIRO_GLX))
+#error "Need one of cairo-egl or cairo-glx"
+#endif
 
 GST_DEBUG_CATEGORY (gst_cairo_sink_debug_category);
 #define GST_CAT_DEFAULT gst_cairo_sink_debug_category
@@ -171,15 +164,16 @@ enum
   PROP_0,
   PROP_CAIRO_SURFACE,
   PROP_CAIRO_BACKEND,
+  PROP_CAIRO_SYSTEM,
   PROP_MAIN_CONTEXT
 };
 
-#ifdef USE_CAIRO_GLX
-#define GST_CAIRO_BACKEND_DEFAULT GST_CAIRO_BACKEND_GLX
-#elif USE_CAIRO_EGL
-#define GST_CAIRO_BACKEND_DEFAULT GST_CAIRO_BACKEND_EGL
+#define GST_CAIRO_BACKEND_DEFAULT GST_CAIRO_BACKEND_GL
+
+#ifdef HAVE_CAIRO_GLX
+#define GST_CAIRO_SYSTEM_DEFAULT GST_CAIRO_SYSTEM_GLX
 #else
-#define GST_CAIRO_BACKEND_DEFAULT GST_CAIRO_BACKEND_XLIB
+#define GST_CAIRO_SYSTEM_DEFAULT GST_CAIRO_SYSTEM_EGL
 #endif
 
 #define GST_CAIRO_BACKEND_TYPE (gst_cairo_backend_get_type())
@@ -189,9 +183,13 @@ gst_cairo_backend_get_type (void)
   static GType backend_type = 0;
 
   static const GEnumValue backend_values[] = {
-    {GST_CAIRO_BACKEND_GLX, "Use OpenGL and GLX", "glx"},
-    {GST_CAIRO_BACKEND_XLIB, "Use Xlib", "xlib"},
-    {GST_CAIRO_BACKEND_EGL, "Use OpenGLES and EGL", "egl"},
+    {GST_CAIRO_BACKEND_GL,
+#ifdef USE_CAIRO_GL
+          "Use OpenGL",
+#elif USE_CAIRO_GLESV2
+          "Use OpenGLESV2",
+#endif
+        "gl"},
     {0, NULL, NULL}
   };
 
@@ -200,6 +198,24 @@ gst_cairo_backend_get_type (void)
         g_enum_register_static ("GstCairoBackendType", backend_values);
 
   return backend_type;
+}
+
+#define GST_CAIRO_SYSTEM_TYPE (gst_cairo_system_get_type())
+static GType
+gst_cairo_system_get_type (void)
+{
+  static GType system_type = 0;
+
+  static const GEnumValue system_values[] = {
+    {GST_CAIRO_SYSTEM_EGL, "Use EGL", "egl"},
+    {GST_CAIRO_SYSTEM_GLX, "Use GLX", "glx"},
+    {0, NULL, NULL}
+  };
+
+  if (!system_type)
+    system_type = g_enum_register_static ("GstCairoSystemType", system_values);
+
+  return system_type;
 }
 
 /* pad templates */
@@ -247,6 +263,11 @@ gst_cairo_sink_class_init (GstCairoSinkClass * klass)
           "Cairo backend to use",
           GST_CAIRO_BACKEND_TYPE,
           GST_CAIRO_BACKEND_DEFAULT, G_PARAM_READWRITE));
+  g_object_class_install_property (gobject_class, PROP_CAIRO_SYSTEM,
+      g_param_spec_enum ("cairo-system",
+          "Cairo system to use",
+          "Cairo system to use",
+          GST_CAIRO_SYSTEM_TYPE, GST_CAIRO_SYSTEM_DEFAULT, G_PARAM_READWRITE));
   g_object_class_install_property (gobject_class, PROP_MAIN_CONTEXT,
       g_param_spec_boxed ("main-context",
           "GMainContext to use for graphic calls",
@@ -267,6 +288,7 @@ gst_cairo_sink_init (GstCairoSink * cairosink)
   cairosink->sinkpad =
       gst_pad_new_from_static_template (&gst_cairo_sink_sink_template, "sink");
   cairosink->backend_type = GST_CAIRO_BACKEND_DEFAULT;
+  cairosink->system_type = GST_CAIRO_SYSTEM_DEFAULT;
 }
 
 void
@@ -295,6 +317,9 @@ gst_cairo_sink_set_property (GObject * object, guint property_id,
     }
     case PROP_CAIRO_BACKEND:
       cairosink->backend_type = g_value_get_enum (value);
+      break;
+    case PROP_CAIRO_SYSTEM:
+      cairosink->system_type = g_value_get_enum (value);
       break;
     case PROP_MAIN_CONTEXT:
     {
@@ -328,6 +353,9 @@ gst_cairo_sink_get_property (GObject * object, guint property_id,
     }
     case PROP_CAIRO_BACKEND:
       g_value_set_enum (value, cairosink->backend_type);
+      break;
+    case PROP_CAIRO_SYSTEM:
+      g_value_set_enum (value, cairosink->system_type);
       break;
     case PROP_MAIN_CONTEXT:
     {
@@ -393,26 +421,55 @@ queue_check_full_func (GstDataQueue * queue, guint visible, guint bytes,
   return visible != 0;
 }
 
+static GstCairoSystem *
+_get_system (GstCairoSystemType type)
+{
+  switch (type) {
+#ifdef HAVE_CAIRO_EGL
+    case GST_CAIRO_SYSTEM_EGL:
+      return &gst_cairo_system_egl;
+      break;
+#endif
+#ifdef HAVE_CAIRO_GLX
+    case GST_CAIRO_SYSTEM_GLX:
+      return &gst_cairo_system_glx;
+      break;
+#endif
+    default:
+      return NULL;
+  }
+}
+
+static GstCairoBackend *
+_get_backend (GstCairoBackendType type)
+{
+#if defined(USE_CAIRO_GL) || defined(USE_CAIRO_GLESV2)
+  if (type != GST_CAIRO_BACKEND_GL)
+    GST_ERROR ("Backend type not implemented: %d", type);
+  return &gst_cairo_backend_gl;
+#endif
+  return NULL;
+}
 
 static gboolean
 gst_cairo_sink_start (GstBaseSink * base_sink)
 {
   GstCairoSink *cairosink = GST_CAIRO_SINK (base_sink);
 
-  if (cairosink->backend == NULL)
-    cairosink->backend = gst_cairo_backend_new (cairosink->backend_type);
+  if (cairosink->system == NULL) {
+    cairosink->system = _get_system (cairosink->system_type);
+  }
+  if (cairosink->backend == NULL) {
+    cairosink->backend = _get_backend (cairosink->backend_type);
+  }
 
-  /* query_can_map */
-  cairosink->backend->can_map =
-      cairosink->backend->query_can_map (cairosink->surface);
-
-  if (cairosink->backend->can_map)
+  if (cairosink->system->query_can_map (cairosink->surface))
     cairosink->allocator = gst_cairo_allocator_new (cairosink);
 
-  if (!cairosink->backend)
+  if (!cairosink->backend || !cairosink->system)
     goto error;
 
-  if (cairosink->backend->need_own_thread && !cairosink->render_main_context) {
+  if (!cairosink->render_main_context) {
     GError *error = NULL;
 
     cairosink->render_main_context = g_main_context_new ();
@@ -445,7 +502,6 @@ gst_cairo_sink_start (GstBaseSink * base_sink)
 
 error:
   if (cairosink->backend) {
-    gst_cairo_backend_destroy (cairosink->backend);
     cairosink->backend = NULL;
   }
 
@@ -494,7 +550,6 @@ gst_cairo_sink_stop (GstBaseSink * base_sink)
     cairosink->device = NULL;
   }
   if (cairosink->backend) {
-    gst_cairo_backend_destroy (cairosink->backend);
     cairosink->backend = NULL;
   }
 
@@ -715,7 +770,7 @@ gst_cairo_sink_source_dispatch (GSource * source,
       gst_structure_get_int (structure, "width", &caps_width);
       gst_structure_get_int (structure, "height", &caps_height);
       cairosink->surface =
-          cairosink->backend->create_display_surface (caps_width, caps_height);
+          cairosink->system->create_display_surface (caps_width, caps_height);
       cairosink->device = cairo_surface_get_device (cairosink->surface);
     } else {
       GST_TRACE_OBJECT (cairosink, "Already have a surface for these caps");

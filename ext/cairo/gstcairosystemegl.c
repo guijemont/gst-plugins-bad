@@ -1,22 +1,22 @@
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 #include <EGL/egl.h>
-#include <GLES2/gl2.h>
 
 #include <cairo-gl.h>
-
-#include "gstcairobackendegl.h"
 #include <gst/gst.h>
 
-#include <glib.h>
+#include "gstcairosystem.h"
 
-static cairo_surface_t *gst_cairo_backend_egl_create_display_surface (gint
-    width, gint height);
-static cairo_surface_t *gst_cairo_backend_egl_create_surface (GstCairoBackend *
-    backend, cairo_device_t * device, gint width, gint height,
-    GstCairoBackendSurfaceInfo ** surface_info);
-static void gst_cairo_backend_egl_get_size (cairo_surface_t * surface,
-    gint * width, gint * height);
+static cairo_surface_t *_egl_create_display_surface (gint width, gint height);
 
-static gboolean gst_cairo_backend_egl_query_can_map (cairo_surface_t * surface);
+static gboolean _egl_query_can_map (cairo_surface_t * surface);
+
+GstCairoSystem gst_cairo_system_egl = {
+  _egl_create_display_surface,
+  _egl_query_can_map,
+  GST_CAIRO_SYSTEM_EGL
+};
 
 static EGLint multisampleAttributes[] = {
   EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
@@ -40,28 +40,6 @@ static EGLint singleSampleAttributes[] = {
   EGL_NONE
 };
 
-GstCairoBackend *
-gst_cairo_backend_egl_new (void)
-{
-  GstCairoBackend *backend = g_slice_new (GstCairoBackend);
-
-  backend->create_display_surface =
-      gst_cairo_backend_egl_create_display_surface;
-  backend->create_surface = gst_cairo_backend_egl_create_surface;
-  backend->show = cairo_gl_surface_swapbuffers;
-  backend->need_own_thread = TRUE;
-  backend->get_size = gst_cairo_backend_egl_get_size;
-  backend->query_can_map = gst_cairo_backend_egl_query_can_map;
-
-  return backend;
-}
-
-void
-gst_cairo_backend_egl_destroy (GstCairoBackend * backend)
-{
-  g_slice_free (GstCairoBackend, backend);
-}
-
 static Display *
 get_display (void)
 {
@@ -79,7 +57,7 @@ get_display (void)
 
 /* Mostly cut and paste from glx-utils.c in cairo-gl-smoke-tests */
 static cairo_surface_t *
-gst_cairo_backend_egl_create_display_surface (gint width, gint height)
+_egl_create_display_surface (gint width, gint height)
 {
   Window window;
   Display *display;
@@ -156,31 +134,8 @@ CLEANUP_X:
   return NULL;
 }
 
-static cairo_surface_t *
-gst_cairo_backend_egl_create_surface (GstCairoBackend * backend,
-    cairo_device_t * device, gint width, gint height,
-    GstCairoBackendSurfaceInfo ** surface_info)
-{
-  if (!surface_info)
-    return NULL;
-
-  *surface_info = g_slice_new (GstCairoBackendSurfaceInfo);
-
-  (*surface_info)->backend = backend;
-
-  return cairo_gl_surface_create (device, CAIRO_CONTENT_COLOR, width, height);
-}
-
-static void
-gst_cairo_backend_egl_get_size (cairo_surface_t * surface, gint * width,
-    gint * height)
-{
-  *width = cairo_gl_surface_get_width (surface);
-  *height = cairo_gl_surface_get_height (surface);
-}
-
 static gboolean
-gst_cairo_backend_egl_query_can_map (cairo_surface_t * surface)
+_egl_query_can_map (cairo_surface_t * surface)
 {
   /* map not implemented yet */
   return FALSE;

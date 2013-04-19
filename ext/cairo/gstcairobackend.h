@@ -57,23 +57,18 @@ typedef struct _GstCairoBackend GstCairoBackend;
 typedef struct _GstCairoBackendSurfaceInfo GstCairoBackendSurfaceInfo;
 
 /**
-  A GstCairoBackend handles all the things that are specific to a surface type.
-  Some surface types might have two separate back ends (that could share some
-  code). For instance, there might be several back ends for gl surfaces:
-  EGL/GLES, GLX, etc...
+  A GstCairoBackend handles all the things that are specific to a surface (e.g.
+  GL or Xlib) type but not to the system (e.g. EGL or GLX).
  */
 
 typedef enum
 {
-  GST_CAIRO_BACKEND_GLX = 1,
-  GST_CAIRO_BACKEND_XLIB = 2,
-  GST_CAIRO_BACKEND_EGL = 3,
+  GST_CAIRO_BACKEND_GL = 1,
 } GstCairoBackendType;
-#define GST_CAIRO_BACKEND_LAST 2
+#define GST_CAIRO_BACKEND_LAST 1
 
 struct _GstCairoBackend
 {
-  cairo_surface_t *(*create_display_surface) (gint width, gint height);
   cairo_surface_t *(*create_surface) (GstCairoBackend * backend,
       cairo_device_t * device, gint width, gint height,
       GstCairoBackendSurfaceInfo ** surface_info);
@@ -82,24 +77,20 @@ struct _GstCairoBackend
   void (*get_size) (cairo_surface_t * surface, gint * width, gint * height);
   void (*show) (cairo_surface_t * surface);
 
-    gpointer (*surface_map) (cairo_surface_t * surface,
+  gpointer (*surface_map) (cairo_surface_t * surface,
       GstCairoBackendSurfaceInfo * surface_info, GstMapFlags flags);
   void (*surface_unmap) (cairo_surface_t * surface,
       GstCairoBackendSurfaceInfo * surface_info);
 
-  gboolean (*query_can_map) (cairo_surface_t *surface);
-
   GstCairoBackendType backend_type;
-  gboolean need_own_thread;
-  gboolean can_map;
 };
 
+/**
+  This would typically be subclassed in the backend.
+  */
 struct _GstCairoBackendSurfaceInfo
 {
   GstCairoBackend *backend;
 };
-
-GstCairoBackend *gst_cairo_backend_new (GstCairoBackendType backend_type);
-void gst_cairo_backend_destroy (GstCairoBackend * backend);
 
 #endif /* _GST_CAIRO_BACKEND_H_ */

@@ -253,39 +253,49 @@ if test "x$HAVE_X11" = "xyes"; then
   AC_DEFINE(HAVE_X11, 1, [Define if you have X11 library])
 fi
 
-dnl GLX is optional for cairosink
-PKG_CHECK_MODULES(CAIRO_GLX, cairo-glx, HAVE_CAIRO_GLX=yes, HAVE_CAIRO_GLX=no)
-AC_SUBST(CAIRO_GLX_LIBS)
-AC_SUBST(CAIRO_GLX_CFLAGS)
-AC_SUBST(HAVE_CAIRO_GLX)
-if test "x$HAVE_CAIRO_GLX" = "xyes"; then
-  USE_CAIRO_GLX=yes
-  AC_DEFINE(USE_CAIRO_GLX, [1], [Define whether to build glx backend for cairosink])
-fi
-AM_CONDITIONAL(USE_CAIRO_GLX, test "x$HAVE_CAIRO_GLX" = "xyes")
-
-PKG_CHECK_MODULES(CAIRO_EGL, cairo-egl, HAVE_CAIRO_EGL=yes, HAVE_CAIRO_EGL=no)
-AC_SUBST(CAIRO_EGL_LIBS)
-AC_SUBST(CAIRO_EGL_CFLAGS)
-AC_SUBST(HAVE_CAIRO_EGL)
-if test "x$HAVE_CAIRO_EGL" = "xyes"; then
-  AC_DEFINE(HAVE_CAIRO_EGL, [1], [Define if you have cairo-egl])
-fi
-
+dnl whether to use cairo-gl or cairo-gles for cairosink (at most one of the two
+dnl can be used)
 PKG_CHECK_MODULES(CAIRO_GLESV2, cairo-glesv2, HAVE_CAIRO_GLESV2=yes, HAVE_CAIRO_GLESV2=no)
 AC_SUBST(CAIRO_GLESV2_LIBS)
 AC_SUBST(CAIRO_GLESV2_CFLAGS)
-AC_SUBST(HAVE_CAIRO_GLESV2)
-if test "x$HAVE_CAIRO_GLESV2" = "xyes"; then
-  AC_DEFINE(HAVE_CAIRO_GLESV2, 1, [Define if you have cairo-glesv2])
+
+PKG_CHECK_MODULES(CAIRO_GL, cairo-gl, HAVE_CAIRO_GL=yes, HAVE_CAIRO_GL=no)
+AC_SUBST(CAIRO_GL_LIBS)
+AC_SUBST(CAIRO_GL_CFLAGS)
+if test "x$HAVE_CAIRO_GL" = "xyes"; then
+  AC_DEFINE(HAVE_CAIRO_GL, 1, [Define if you have cairo-gl])
 fi
 
-dnl we need both egl and glesv2 for the egl back end to work
-if test "x$HAVE_CAIRO_EGL" = "xyes" -a "x$HAVE_CAIRO_GLESV2" = "xyes" ; then
-  USE_CAIRO_EGL=yes
-  AC_DEFINE(USE_CAIRO_EGL, [1], [Define whether to build egl backend for cairosink])
+if test "x$HAVE_CAIRO_GLESV2" = "xyes" ; then
+  USE_CAIRO_GLESV2=yes
+  AC_DEFINE(USE_CAIRO_GLESV2, [1], [Define whether to use cairo-glesv2 for cairosink])
+else if test "x$HAVE_CAIRO_GL" = "xyes" ; then
+  USE_CAIRO_GL=yes
+  AC_DEFINE(USE_CAIRO_GL, [1], [Define whether to use cairo-gl for cairosink])
 fi
-AM_CONDITIONAL(USE_CAIRO_EGL, test "x$USE_CAIRO_EGL" = "xyes" )
+fi
+AM_CONDITIONAL(USE_CAIRO_GL, test "x$USE_CAIRO_GL" = "xyes" )
+AM_CONDITIONAL(USE_CAIRO_GLESV2, test "x$USE_CAIRO_GLESV2" = "xyes" )
+
+dnl whether we have cairo-glx for cairosink
+PKG_CHECK_MODULES(CAIRO_GLX, cairo-glx, HAVE_CAIRO_GLX=yes, HAVE_CAIRO_GLX=no)
+AC_SUBST(CAIRO_GLX_LIBS)
+AC_SUBST(CAIRO_GLX_CFLAGS)
+dnl AC_SUBST(HAVE_CAIRO_GLX)
+if test "x$HAVE_CAIRO_GLX" = "xyes"; then
+  AC_DEFINE(HAVE_CAIRO_GLX, [1], [Define if you have cairo-glx])
+fi
+AM_CONDITIONAL(HAVE_CAIRO_GLX, test "x$HAVE_CAIRO_GLX" = "xyes")
+
+dnl whether we have cairo-egl for cairosink
+PKG_CHECK_MODULES(CAIRO_EGL, cairo-egl, HAVE_CAIRO_EGL=yes, HAVE_CAIRO_EGL=no)
+AC_SUBST(CAIRO_EGL_LIBS)
+AC_SUBST(CAIRO_EGL_CFLAGS)
+dnl AC_SUBST(HAVE_CAIRO_EGL)
+if test "x$HAVE_CAIRO_EGL" = "xyes"; then
+  AC_DEFINE(HAVE_CAIRO_EGL, [1], [Define if you have cairo-egl])
+fi
+AM_CONDITIONAL(HAVE_CAIRO_EGL, test "x$HAVE_CAIRO_EGL" = "xyes")
 
 dnl exif (used on jifmux tests) ****
 PKG_CHECK_MODULES(EXIF, libexif >= 0.6.16, HAVE_EXIF="yes", HAVE_EXIF="no")
