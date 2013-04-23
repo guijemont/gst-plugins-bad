@@ -15,13 +15,15 @@ libgstcairobad_la_LIBADD = \
 libgstcairobad_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS)
 libgstcairobad_la_LIBTOOLFLAGS = --tag=disable-static
 
+GL_SOURCES = gstcairobackendgl.c gstglmemory.c gstcairothreading.c
+
 if USE_CAIRO_GL
-libgstcairobad_la_SOURCES += gstcairobackendgl.c
+libgstcairobad_la_SOURCES += $(GL_SOURCES)
 libgstcairobad_la_CFLAGS += $(CAIRO_GL_CFLAGS)
 libgstcairobad_la_LIBADD += $(CAIRO_GL_LIBS)
 else
 if USE_CAIRO_GLESV2
-libgstcairobad_la_SOURCES += gstcairobackendgl.c
+libgstcairobad_la_SOURCES += $(GL_SOURCES)
 libgstcairobad_la_CFLAGS += $(CAIRO_GLESV2_CFLAGS)
 libgstcairobad_la_LIBADD += $(CAIRO_GLESV2_LIBS)
 endif
