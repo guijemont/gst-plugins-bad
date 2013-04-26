@@ -84,18 +84,12 @@ struct _GstCairoSink
   GMainContext *render_main_context;
   GThread *thread;
   GMainLoop *loop;
-  GSource *source;
-  GstDataQueue *queue;
 
-  GMutex render_mutex;
-  GCond render_cond;
   cairo_surface_t *surface;
   gboolean owns_surface;
   cairo_device_t *device;
-  GstFlowReturn last_ret;
-  GstMiniObject *last_finished_operation;
 
-  GstCairoAllocator *allocator;
+  GstAllocator *allocator;
   GstBufferPool *buffer_pool;
 };
 

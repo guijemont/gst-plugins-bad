@@ -70,17 +70,9 @@ typedef enum
 struct _GstCairoBackend
 {
   cairo_surface_t *(*create_surface) (GstCairoBackend * backend,
-      cairo_device_t * device, gint width, gint height,
-      GstCairoBackendSurfaceInfo ** surface_info);
-  void (*destroy_surface) (cairo_surface_t * surface,
-      GstCairoBackendSurfaceInfo * surface_info);
-  void (*get_size) (cairo_surface_t * surface, gint * width, gint * height);
+      cairo_device_t * device, GstMemory * mem);
+  void (*destroy_surface) (cairo_surface_t * surface);
   void (*show) (cairo_surface_t * surface);
-
-  gpointer (*surface_map) (cairo_surface_t * surface,
-      GstCairoBackendSurfaceInfo * surface_info, GstMapFlags flags);
-  void (*surface_unmap) (cairo_surface_t * surface,
-      GstCairoBackendSurfaceInfo * surface_info);
 
   GstCairoBackendType backend_type;
 };
