@@ -50,6 +50,15 @@
 
 #include <gst/gst.h>
 
+typedef struct
+{
+  GstCairoThreadFunction function;
+  gpointer user_data;
+  GMutex *mutex;
+  GCond *cond;
+  gpointer *last_data;
+} GstCairoFunctionInfo;
+
 static gboolean
 _function_wrapper (GstCairoFunctionInfo * function_info)
 {
@@ -89,4 +98,28 @@ gst_cairo_main_context_invoke_sync (GMainContext * context,
     GST_TRACE ("got cond");
   }
   g_mutex_unlock (mutex);
+}
+
+GstCairoThreadInfo *
+gst_cairo_thread_info_new (GMainContext * context)
+{
+  GstCairoThreadInfo *thread_info;
+
+  thread_info = g_slice_new (GstCairoThreadInfo);
+
+  thread_info->context = g_main_context_ref (context);
+  g_mutex_init (&thread_info->mutex);
+  g_cond_init (&thread_info->cond);
+  thread_info->last_data = NULL;
+
+  return thread_info;
+}
+
+void
+gst_cairo_thread_info_destroy (GstCairoThreadInfo * thread_info)
+{
+  g_main_context_unref (thread_info->context);
+  g_mutex_clear (&thread_info->mutex);
+  g_cond_clear (&thread_info->cond);
+  g_slice_free (GstCairoThreadInfo, thread_info);
 }
