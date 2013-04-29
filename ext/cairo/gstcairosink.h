@@ -77,6 +77,8 @@ struct _GstCairoSink
 
   GstPad *sinkpad;
   GstCaps *caps;
+  gint width;
+  gint height;
 
   GstCairoBackendType backend_type;
   GstCairoBackend *backend;

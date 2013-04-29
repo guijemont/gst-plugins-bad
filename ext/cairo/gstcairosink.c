@@ -181,7 +181,13 @@ static GstStaticPadTemplate gst_cairo_sink_sink_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
+#ifdef USE_CAIRO_GL
+    /* when we use textures, we want to upload stuff in RGBA */
     GST_STATIC_CAPS ("video/x-raw, format=RGBA")
+#else
+    /* when using a cairo image surface, we need to provide data in BGRA */
+    GST_STATIC_CAPS ("video/x-raw, format=BGRA")
+#endif
     );
 
 
@@ -364,16 +370,47 @@ _copy_buffer (GstStructure * params)
   cairo_surface_t *surface;
   GstCairoSink *cairosink;
   cairo_t *context;
+  GstMapInfo map_info;
+  gint width, height;
+  GstFlowReturn return_value = GST_FLOW_OK;
 
   if (!gst_structure_get (params, "cairosink", G_TYPE_POINTER, &cairosink,
-          "memory", G_TYPE_POINTER, &mem, NULL))
-    return;
+          "memory", G_TYPE_POINTER, &mem,
+          "width", G_TYPE_INT, &width, "height", G_TYPE_INT, &height, NULL)) {
+    return_value = GST_FLOW_ERROR;
+    goto end;
+  }
 
-  surface = cairosink->backend->create_surface (cairosink->backend,
-      cairosink->device, mem);
-  if (!surface) {
-    GST_WARNING_OBJECT (cairosink, "Backend could not create new surface");
-    return;
+  if (mem->allocator == cairosink->allocator) {
+    surface = cairosink->backend->create_surface (cairosink->backend,
+        cairosink->device, mem);
+    if (!surface) {
+      GST_WARNING_OBJECT (cairosink, "Backend could not create new surface");
+      return_value = GST_FLOW_ERROR;
+      goto end;
+    }
+  } else if (gst_memory_map (mem, &map_info, GST_MAP_READ)) {
+    /* FIXME: check that our data has this stride, convert otherwise */
+    gint stride = cairo_format_stride_for_width (CAIRO_FORMAT_ARGB32, width);
+
+    if (stride * height > map_info.size) {
+      GST_ERROR_OBJECT (cairosink, "Incompatible stride? width:%d height:%d "
+          "expected stride: %d expected size: %d actual size: %ld",
+          width, height, stride, stride * height, map_info.size);
+      return_value = GST_FLOW_ERROR;
+      goto end;
+    }
+
+    surface = cairo_image_surface_create_for_data (map_info.data,
+        CAIRO_FORMAT_ARGB32, width, height, stride);
+
+
+    GST_TRACE_OBJECT (cairosink, "Uploaded memory %" GST_PTR_FORMAT, mem);
+  } else {
+    GST_ERROR_OBJECT (cairosink,
+        "Do not know how to upload data from %" GST_PTR_FORMAT, mem);
+    return_value = GST_FLOW_ERROR;
+    goto end;
   }
 
   context = cairo_create (cairosink->surface);
@@ -384,13 +421,23 @@ _copy_buffer (GstStructure * params)
   gl_debug ("cairo_paint() done");
   cairo_destroy (context);
 
-  cairosink->backend->destroy_surface (surface);
-
   GST_TRACE_OBJECT (cairosink,
-      "Copied texture from %" GST_PTR_FORMAT " to display surface", mem);
+      "Copied texture/data from %" GST_PTR_FORMAT " to display surface", mem);
 
+
+end:
+
+  if (mem->allocator == cairosink->allocator) {
+    if (surface)
+      cairosink->backend->destroy_surface (surface);
+  } else {
+    if (surface)
+      cairo_surface_destroy (surface);
+    if (map_info.data)
+      gst_memory_unmap (mem, &map_info);
+  }
   gst_structure_set (params, "return-value", GST_TYPE_FLOW_RETURN,
-      GST_FLOW_OK, NULL);
+      return_value, NULL);
 }
 
 static GstFlowReturn
@@ -413,16 +460,12 @@ gst_cairo_sink_prepare (GstBaseSink * base_sink, GstBuffer * buf)
   }
 
   mem = gst_buffer_peek_memory (buf, 0);
-  if (mem->allocator != GST_ALLOCATOR_CAST (cairosink->allocator)) {
-    /* FIXME: implement it */
-    GST_ERROR_OBJECT (cairosink,
-        "Buffers from \"foreign\" allocators not supported yet");
-    return GST_FLOW_ERROR;
-  }
 
   params = gst_structure_new ("copy-buffer",
       "cairosink", G_TYPE_POINTER, cairosink,
-      "memory", G_TYPE_POINTER, mem, NULL);
+      "memory", G_TYPE_POINTER, mem,
+      "width", G_TYPE_INT, cairosink->width,
+      "height", G_TYPE_INT, cairosink->height, NULL);
   gst_cairo_thread_invoke_sync (cairosink->render_thread_info,
       (GstCairoThreadFunction) _copy_buffer, params);
 
@@ -722,6 +765,8 @@ gst_cairo_sink_set_caps (GstBaseSink * base_sink, GstCaps * caps)
     cairosink->device = cairo_surface_get_device (cairosink->surface);
 
   cairosink->caps = gst_caps_ref (caps);
+  cairosink->width = width;
+  cairosink->height = height;
 
   return TRUE;
 }
