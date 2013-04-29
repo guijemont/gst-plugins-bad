@@ -67,9 +67,11 @@
 static void gst_gl_allocator_free (GstAllocator * allocator,
     GstMemory * memory);
 
+#ifdef CAIROSINK_USE_PBO
 static gpointer gst_gl_allocator_mem_map (GstMemory * mem, gsize maxsize,
     GstMapFlags flags);
 static void gst_gl_allocator_mem_unmap (GstMemory * mem);
+#endif
 
 static GstFlowReturn gst_gl_buffer_pool_alloc_buffer (GstBufferPool * pool,
     GstBuffer ** buffer, GstBufferPoolAcquireParams * params);
@@ -98,12 +100,12 @@ gst_gl_allocator_init (GstGLAllocator * glallocator)
 }
 
 GstGLAllocator *
-gst_gl_allocator_new (GMainContext * main_context)
+gst_gl_allocator_new (GstCairoThreadInfo * thread_info)
 {
   GstGLAllocator *allocator = g_object_new (gst_gl_allocator_get_type (),
       NULL);
 
-  allocator->main_context = main_context;
+  allocator->thread_info = thread_info;
 
   return allocator;
 }
@@ -163,7 +165,7 @@ gst_gl_allocator_alloc_buffer (GstAllocator * allocator, guint width,
       "allocator", G_TYPE_POINTER, allocator,
       "width", G_TYPE_INT, width, "height", G_TYPE_INT, height, NULL);
 
-  gst_gl_allocator_invoke_sync (glallocator,
+  gst_cairo_thread_invoke_sync (glallocator->thread_info,
       (GstCairoThreadFunction) _do_alloc, structure);
 
   if (!gst_structure_get (structure, "memory", G_TYPE_POINTER, &mem, NULL))
@@ -208,7 +210,7 @@ gst_gl_allocator_free (GstAllocator * allocator, GstMemory * memory)
   structure = gst_structure_new ("gl-free",
       "memory", G_TYPE_POINTER, memory, NULL);
 
-  gst_gl_allocator_invoke_sync (glallocator,
+  gst_cairo_thread_invoke_sync (glallocator->thread_info,
       (GstCairoThreadFunction) _do_free, structure);
 
   gst_structure_free (structure);
@@ -251,8 +253,8 @@ gst_gl_allocator_mem_map (GstMemory * mem, gsize maxsize, GstMapFlags flags)
 
   structure = gst_structure_new ("gl-map", "memory", G_TYPE_POINTER, mem, NULL);
 
-  gst_gl_allocator_invoke_sync (glallocator, (GstCairoThreadFunction) _do_map,
-      structure);
+  gst_cairo_thread_invoke_sync (glallocator->thread_info,
+      (GstCairoThreadFunction) _do_map, structure);
 
   if (!gst_structure_get (structure, "data-area", G_TYPE_POINTER, &data_area,
           NULL)) {
@@ -295,7 +297,7 @@ gst_gl_allocator_mem_unmap (GstMemory * mem)
   structure =
       gst_structure_new ("gl-unmap", "memory", G_TYPE_POINTER, mem, NULL);
 
-  gst_gl_allocator_invoke_sync (glallocator,
+  gst_cairo_thread_invoke_sync (glallocator->thread_info,
       (GstCairoThreadFunction) _do_unmap, structure);
 
   gst_structure_free (structure);

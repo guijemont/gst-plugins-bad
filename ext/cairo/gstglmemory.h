@@ -76,10 +76,7 @@ struct _GstGLAllocator
 {
     GstAllocator parent;
 
-    GMainContext *main_context;
-    GMutex render_mutex;
-    GCond render_cond;
-    gpointer last_operation;
+    GstCairoThreadInfo *thread_info;
 };
 
 struct _GstGLBufferPool
@@ -95,16 +92,11 @@ struct _GstGLBufferPool
 GType gst_gl_allocator_get_type (void);
 GType gst_gl_buffer_pool_get_type (void);
 
-GstGLAllocator * gst_gl_allocator_new (GMainContext * main_context);
+GstGLAllocator * gst_gl_allocator_new (GstCairoThreadInfo *thread_info);
 GstBuffer * gst_gl_allocator_alloc_buffer (GstAllocator * allocator,
         guint width, guint height);
 
 GstGLBufferPool * gst_gl_buffer_pool_new (GstGLAllocator *allocator,
         GstCaps *caps);
-
-#define gst_gl_allocator_invoke_sync(allocator, function, user_data) \
-    gst_cairo_main_context_invoke_sync(allocator->main_context, \
-            &allocator->render_mutex, &allocator->render_cond, \
-            &allocator->last_operation, function, user_data)
 
 #endif /* _GST_GL_MEMORY_H_ */
