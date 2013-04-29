@@ -281,9 +281,17 @@ gst_cairo_sink_set_property (GObject * object, guint property_id,
     case PROP_MAIN_CONTEXT:
     {
       GMainContext *context = g_value_get_boxed (value);
-      if (context)
+      if (context) {
         g_main_context_ref (context);
+      }
+      if (cairosink->render_thread_info) {
+        gst_cairo_thread_info_destroy (cairosink->render_thread_info);
+        cairosink->render_thread_info = NULL;
+      }
+
       cairosink->render_main_context = context;
+      if (context)
+        cairosink->render_thread_info = gst_cairo_thread_info_new (context);
       break;
     }
     default:
@@ -415,7 +423,7 @@ gst_cairo_sink_prepare (GstBaseSink * base_sink, GstBuffer * buf)
   params = gst_structure_new ("copy-buffer",
       "cairosink", G_TYPE_POINTER, cairosink,
       "memory", G_TYPE_POINTER, mem, NULL);
-  gst_gl_allocator_invoke_sync (((GstGLAllocator *) cairosink->allocator),
+  gst_cairo_thread_invoke_sync (cairosink->render_thread_info,
       (GstCairoThreadFunction) _copy_buffer, params);
 
   if (!gst_structure_get (params, "return-value", GST_TYPE_FLOW_RETURN, &ret,
@@ -464,7 +472,7 @@ gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf)
   params = gst_structure_new ("show-frame",
       "surface", G_TYPE_POINTER, cairosink->surface,
       "backend", G_TYPE_POINTER, cairosink->backend, NULL);
-  gst_gl_allocator_invoke_sync (((GstGLAllocator *) cairosink->allocator),
+  gst_cairo_thread_invoke_sync (cairosink->render_thread_info,
       (GstCairoThreadFunction) _show_frame, params);
 
   if (!gst_structure_get (params, "return-value", GST_TYPE_FLOW_RETURN, &ret,
@@ -537,6 +545,8 @@ gst_cairo_sink_start (GstBaseSink * base_sink)
       g_error_free (error);
       goto error;
     }
+    cairosink->render_thread_info =
+        gst_cairo_thread_info_new (cairosink->render_main_context);
   }
 
   if (!cairosink->render_main_context)
@@ -553,6 +563,9 @@ error:
     g_main_context_unref (cairosink->render_main_context);
     cairosink->render_main_context = NULL;
   }
+
+  if (cairosink->render_thread_info)
+    gst_cairo_thread_info_destroy (cairosink->render_thread_info);
 
   if (cairosink->thread) {
     g_thread_unref (cairosink->thread);
@@ -604,6 +617,11 @@ gst_cairo_sink_stop (GstBaseSink * base_sink)
     cairosink->render_main_context = NULL;
   }
 
+  if (cairosink->render_thread_info) {
+    gst_cairo_thread_info_destroy (cairosink->render_thread_info);
+    cairosink->render_thread_info = NULL;
+  }
+
   if (cairosink->loop) {
     g_main_loop_quit (cairosink->loop);
     g_main_loop_unref (cairosink->loop);
@@ -646,7 +664,7 @@ gst_cairo_sink_create_display_surface (GstCairoSink * cairosink,
       "cairosink", G_TYPE_POINTER, cairosink,
       "width", G_TYPE_UINT, width, "height", G_TYPE_UINT, height, NULL);
 
-  gst_gl_allocator_invoke_sync (((GstGLAllocator *) cairosink->allocator),
+  gst_cairo_thread_invoke_sync (cairosink->render_thread_info,
       (GstCairoThreadFunction) _do_create_display_surface, params);
 
   gst_structure_get (params, "surface", G_TYPE_POINTER, &surface, NULL);
@@ -677,7 +695,7 @@ gst_cairo_sink_set_caps (GstBaseSink * base_sink, GstCaps * caps)
   if (cairosink->system->query_can_map (cairosink->surface)) {
     if (!cairosink->allocator)
       cairosink->allocator = (GstAllocator *)
-          gst_gl_allocator_new (cairosink->render_main_context);
+          gst_gl_allocator_new (cairosink->render_thread_info);
 
     glpool = (GstGLBufferPool *) cairosink->buffer_pool;
     if (glpool && (glpool->width != width || glpool->height != height)) {

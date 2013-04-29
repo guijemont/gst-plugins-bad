@@ -56,6 +56,7 @@
 #include <cairo-gobject.h>
 #include "gstcairobackend.h"
 #include "gstcairosystem.h"
+#include "gstcairothreading.h"
 
 G_BEGIN_DECLS
 #define GST_TYPE_CAIRO_SINK   (gst_cairo_sink_get_type())
@@ -82,6 +83,7 @@ struct _GstCairoSink
   GstCairoSystemType system_type;
   GstCairoSystem *system;
   GMainContext *render_main_context;
+  GstCairoThreadInfo *render_thread_info;
   GThread *thread;
   GMainLoop *loop;
 
