@@ -181,13 +181,7 @@ static GstStaticPadTemplate gst_cairo_sink_sink_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-#ifdef USE_CAIRO_GL
-    /* when we use textures, we want to upload stuff in RGBA */
-    GST_STATIC_CAPS ("video/x-raw, format=RGBA")
-#else
-    /* when using a cairo image surface, we need to provide data in BGRA */
     GST_STATIC_CAPS ("video/x-raw, format=BGRA")
-#endif
     );
 
 

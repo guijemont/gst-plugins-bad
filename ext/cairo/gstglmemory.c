@@ -172,7 +172,7 @@ gst_gl_allocator_alloc_buffer (GstAllocator * allocator, guint width,
     goto beach;
 
   buffer = gst_buffer_new ();
-  gst_buffer_add_video_meta (buffer, 0, GST_VIDEO_FORMAT_RGBx, width, height);
+  gst_buffer_add_video_meta (buffer, 0, GST_VIDEO_FORMAT_BGRx, width, height);
 
   gst_buffer_append_memory (buffer, mem);
 
@@ -281,7 +281,7 @@ _do_unmap (GstStructure * structure)
   glBindTexture (GL_TEXTURE_2D, glmem->texture);
   /* copies data from pbo to texture */
   glTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, glmem->width,
-      glmem->height, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+      glmem->height, GL_BGRA, GL_UNSIGNED_BYTE, 0);
 
   glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
   glBindTexture (GL_TEXTURE_2D, 0);
