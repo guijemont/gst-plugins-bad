@@ -178,10 +178,11 @@ gst_cairo_system_get_type (void)
 /* pad templates */
 
 static GstStaticPadTemplate gst_cairo_sink_sink_template =
-GST_STATIC_PAD_TEMPLATE ("sink",
+    GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("video/x-raw, format=BGRA")
+    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE_WITH_FEATURES
+        (GST_CAPS_FEATURE_MEMORY_GL, "BGRA") ";" GST_VIDEO_CAPS_MAKE ("BGRA"))
     );
 
 
