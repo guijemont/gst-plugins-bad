@@ -37,18 +37,6 @@ GstCairoBackend gst_cairo_backend_gl = {
   GST_CAIRO_BACKEND_GL
 };
 
-typedef struct
-{
-  GstCairoBackendSurfaceInfo parent;
-  GLuint texture;
-#ifdef CAIROSINK_USE_PBO
-  GLuint pbo;
-#endif
-  GLuint data_size;
-  GLuint width;
-  GLuint height;
-} GstCairoBackendGLSurfaceInfo;
-
 static void
 _gl_show (cairo_surface_t * surface)
 {

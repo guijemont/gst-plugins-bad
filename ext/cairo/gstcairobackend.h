@@ -54,7 +54,6 @@
 #include <gst/gstmemory.h>
 
 typedef struct _GstCairoBackend GstCairoBackend;
-typedef struct _GstCairoBackendSurfaceInfo GstCairoBackendSurfaceInfo;
 
 /**
   A GstCairoBackend handles all the things that are specific to a surface (e.g.
@@ -75,14 +74,6 @@ struct _GstCairoBackend
   void (*show) (cairo_surface_t * surface);
 
   GstCairoBackendType backend_type;
-};
-
-/**
-  This would typically be subclassed in the backend.
-  */
-struct _GstCairoBackendSurfaceInfo
-{
-  GstCairoBackend *backend;
 };
 
 #endif /* _GST_CAIRO_BACKEND_H_ */
