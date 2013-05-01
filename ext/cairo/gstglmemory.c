@@ -92,7 +92,7 @@ gst_gl_allocator_init (GstGLAllocator * glallocator)
 {
   GstAllocator *allocator = GST_ALLOCATOR_CAST (glallocator);
 
-  allocator->mem_type = "GL";
+  allocator->mem_type = GST_GL_MEMORY_TYPE;
 #ifdef CAIROSINK_USE_PBO
   allocator->mem_map = gst_gl_allocator_mem_map;
   allocator->mem_unmap = gst_gl_allocator_mem_unmap;

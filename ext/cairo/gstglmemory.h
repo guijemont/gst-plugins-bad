@@ -52,6 +52,9 @@
 
 #include "gstcairothreading.h"
 
+#define GST_GL_MEMORY_TYPE "GL"
+#define GST_CAPS_FEATURE_MEMORY_GL "memory:GL"
+
 typedef struct _GstGLMemory GstGLMemory;
 
 struct _GstGLMemory
