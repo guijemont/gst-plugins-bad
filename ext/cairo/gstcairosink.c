@@ -116,6 +116,10 @@ static gpointer gst_cairo_sink_thread_init (gpointer data);
 static gboolean gst_cairo_sink_propose_allocation (GstBaseSink * bsink,
     GstQuery * query);
 
+static gboolean gst_cairo_sink_acquire_context (gpointer abstract_element);
+
+static void gst_cairo_sink_release_context (gpointer abstract_element);
+
 enum
 {
   PROP_0,
@@ -720,6 +724,7 @@ gst_cairo_sink_set_caps (GstBaseSink * base_sink, GstCaps * caps)
   GstStructure *structure;
   gint width, height;
   GstGLBufferPool *glpool;
+  GstGLAllocator *glallocator;
 
   GST_TRACE_OBJECT (cairosink, "set_caps(%" GST_PTR_FORMAT ")", caps);
   structure = gst_caps_get_structure (caps, 0);
@@ -731,9 +736,14 @@ gst_cairo_sink_set_caps (GstBaseSink * base_sink, GstCaps * caps)
   /* query_can_map() should work in any thread as it is supposed to create its
    * own context. We might have to change that in the future */
   if (cairosink->system->query_can_map (cairosink->surface)) {
-    if (!cairosink->allocator)
+    if (!cairosink->allocator) {
       cairosink->allocator = (GstAllocator *)
           gst_gl_allocator_new (cairosink->render_thread_info);
+      glallocator = (GstGLAllocator *) cairosink->allocator;
+      glallocator->acquire_context = gst_cairo_sink_acquire_context;
+      glallocator->release_context = gst_cairo_sink_release_context;
+      glallocator->gst_element = (gpointer) cairosink;
+    }
 
     glpool = (GstGLBufferPool *) cairosink->buffer_pool;
     if (glpool && (glpool->width != width || glpool->height != height)) {
@@ -816,4 +826,27 @@ gst_cairo_sink_propose_allocation (GstBaseSink * bsink, GstQuery * query)
   }
 
   return ret;
+}
+
+static gboolean
+gst_cairo_sink_acquire_context (gpointer abstract_element)
+{
+  cairo_status_t status;
+  GstCairoSink *cairosink = (GstCairoSink *) abstract_element;
+
+  if (cairosink->device) {
+    status = cairo_device_acquire (cairosink->device);
+    if (status == CAIRO_STATUS_SUCCESS)
+      return TRUE;
+  }
+
+  return FALSE;
+}
+
+static void
+gst_cairo_sink_release_context (gpointer abstract_element)
+{
+  GstCairoSink *cairosink = (GstCairoSink *) abstract_element;
+  if (cairosink->device)
+    cairo_device_release (cairosink->device);
 }

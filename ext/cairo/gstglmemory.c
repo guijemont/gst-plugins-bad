@@ -116,6 +116,7 @@ _do_alloc (GstStructure * structure)
   GstMemory *mem;
   GstGLMemory *glmem;
   GstAllocator *allocator;
+  GstGLAllocator *glallocator;
   gint width, height;
   guint data_size;
 
@@ -135,19 +136,25 @@ _do_alloc (GstStructure * structure)
 
   /* FIXME: would we need to find a way to cairo_device_acqure/release here?
    */
-  glGenTextures (1, &glmem->texture);
-  glBindTexture (GL_TEXTURE_2D, glmem->texture);
-  glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA,
-      GL_UNSIGNED_BYTE, NULL);
-  glBindTexture (GL_TEXTURE_2D, 0);
+  glallocator = (GstGLAllocator *) allocator;
+  if (glallocator->acquire_context && glallocator->release_context) {
+    if (glallocator->acquire_context (glallocator->gst_element)) {
+      glGenTextures (1, &glmem->texture);
+      glBindTexture (GL_TEXTURE_2D, glmem->texture);
+      glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA,
+          GL_UNSIGNED_BYTE, NULL);
+      glBindTexture (GL_TEXTURE_2D, 0);
 
 #ifdef CAIROSINK_USE_PBO
-  /* create PBO */
-  glGenBuffers (1, &glmem->pbo);
-  glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
-  glBufferData (GL_PIXEL_UNPACK_BUFFER, glmem->data_size, NULL, GL_STREAM_DRAW);
-  glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
+      /* create PBO */
+      glGenBuffers (1, &glmem->pbo);
+      glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
+      glBufferData (GL_PIXEL_UNPACK_BUFFER, glmem->data_size, NULL, GL_STREAM_DRAW);
+      glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
 #endif
+      glallocator->release_context (glallocator->gst_element);
+    }
+  }
 
   gst_structure_set (structure, "memory", G_TYPE_POINTER, glmem, NULL);
 }
@@ -192,12 +199,19 @@ static void
 _do_free (GstStructure * structure)
 {
   GstGLMemory *glmem;
+  GstGLAllocator *glallocator;
 
-  if (!gst_structure_get (structure, "memory", G_TYPE_POINTER, &glmem, NULL))
+  if (!gst_structure_get (structure, "memory", G_TYPE_POINTER, &glmem,
+          "allocator", G_TYPE_POINTER, &glallocator, NULL))
     return;
 
-  glDeleteBuffers (1, &glmem->pbo);
-  glDeleteTextures (1, &glmem->texture);
+  if (glallocator->acquire_context && glallocator->release_context) {
+    if (glallocator->acquire_context (glallocator->gst_element)) {
+      glDeleteBuffers (1, &glmem->pbo);
+      glDeleteTextures (1, &glmem->texture);
+      glallocator->release_context (glallocator->gst_element);
+    }
+  }
   g_slice_free (GstGLMemory, glmem);
 }
 
@@ -208,7 +222,8 @@ gst_gl_allocator_free (GstAllocator * allocator, GstMemory * memory)
   GstGLAllocator *glallocator = (GstGLAllocator *) allocator;
 
   structure = gst_structure_new ("gl-free",
-      "memory", G_TYPE_POINTER, memory, NULL);
+      "memory", G_TYPE_POINTER, memory,
+      "allocator", G_TYPE_POINTER, glallocator, NULL);
 
   gst_cairo_thread_invoke_sync (glallocator->thread_info,
       (GstCairoThreadFunction) _do_free, structure);
@@ -221,23 +236,30 @@ static void
 _do_map (GstStructure * structure)
 {
   GstGLMemory *glmem;
+  GstGLAllocator *glallocator;
   gpointer data_area;
 
-  if (!gst_structure_get (structure, "memory", G_TYPE_POINTER, &glmem, NULL))
+  if (!gst_structure_get (structure, "memory", G_TYPE_POINTER, &glmem,
+          "allocator", G_TYPE_POINTER, &glallocator, NULL))
     return;
 
-  gl_debug ("GL: map");
-  glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
+  if (glallocator->acquire_context && glallocator->release_context) {
+    if (glallocator->acquire_context (glallocator->gst_element)) {
+      gl_debug ("GL: map");
+      glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
 
-  /* We put a NULL buffer so that GL discards the current buffer if it is
-   * still being used, instead of waiting for the end of an operation on it.
-   * Makes sure the call to glMapBuffer() won't cause a sync */
-  glBufferData (GL_PIXEL_UNPACK_BUFFER, glmem->data_size, NULL, GL_STREAM_DRAW);
+      /* We put a NULL buffer so that GL discards the current buffer if 
+       * it is still being used, instead of waiting for the end of an 
+       * operation on it. Makes sure the call to glMapBuffer() won't 
+       * cause a sync */
+      glBufferData (GL_PIXEL_UNPACK_BUFFER, glmem->data_size, NULL,
+          GL_STREAM_DRAW);
 
-  data_area = glMapBuffer (GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+      data_area = glMapBuffer (GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
 
-  glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
-
+      glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
+    }
+  }
 
   gst_structure_set (structure, "data-area", G_TYPE_POINTER, data_area, NULL);
 
@@ -251,7 +273,9 @@ gst_gl_allocator_mem_map (GstMemory * mem, gsize maxsize, GstMapFlags flags)
   GstGLAllocator *glallocator = (GstGLAllocator *) mem->allocator;
   gpointer data_area = NULL;
 
-  structure = gst_structure_new ("gl-map", "memory", G_TYPE_POINTER, mem, NULL);
+  structure =
+      gst_structure_new ("gl-map", "memory", G_TYPE_POINTER, mem,
+      "allocator", G_TYPE_POINTER, glallocator, NULL);
 
   gst_cairo_thread_invoke_sync (glallocator->thread_info,
       (GstCairoThreadFunction) _do_map, structure);
@@ -270,22 +294,27 @@ static void
 _do_unmap (GstStructure * structure)
 {
   GstGLMemory *glmem;
+  GstGLAllocator *glallocator;
 
-  if (!gst_structure_get (structure, "memory", G_TYPE_POINTER, &glmem, NULL))
+  if (!gst_structure_get (structure, "memory", G_TYPE_POINTER, &glmem,
+          "allocator", G_TYPE_POINTER, &glallocator, NULL))
     return;
 
-  gl_debug ("GL: unmap");
-  glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
-  glUnmapBuffer (GL_PIXEL_UNPACK_BUFFER);
+  if (glallocator->acquire_context && glallocator->release_context) {
+    gl_debug ("GL: unmap");
+    glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
+    glUnmapBuffer (GL_PIXEL_UNPACK_BUFFER);
 
-  glBindTexture (GL_TEXTURE_2D, glmem->texture);
-  /* copies data from pbo to texture */
-  glTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, glmem->width,
-      glmem->height, GL_BGRA, GL_UNSIGNED_BYTE, 0);
+    glBindTexture (GL_TEXTURE_2D, glmem->texture);
+    /* copies data from pbo to texture */
+    glTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, glmem->width,
+        glmem->height, GL_BGRA, GL_UNSIGNED_BYTE, 0);
 
-  glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
-  glBindTexture (GL_TEXTURE_2D, 0);
-  gl_debug ("exit");
+    glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
+    glBindTexture (GL_TEXTURE_2D, 0);
+    glallocator->release_context (glallocator->gst_element);
+    gl_debug ("exit");
+  }
 }
 
 static void
@@ -295,7 +324,8 @@ gst_gl_allocator_mem_unmap (GstMemory * mem)
   GstGLAllocator *glallocator = (GstGLAllocator *) mem->allocator;
 
   structure =
-      gst_structure_new ("gl-unmap", "memory", G_TYPE_POINTER, mem, NULL);
+      gst_structure_new ("gl-unmap", "memory", G_TYPE_POINTER, mem,
+      "allocator", G_TYPE_POINTER, glallocator, NULL);
 
   gst_cairo_thread_invoke_sync (glallocator->thread_info,
       (GstCairoThreadFunction) _do_unmap, structure);

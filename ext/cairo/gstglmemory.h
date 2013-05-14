@@ -80,6 +80,10 @@ struct _GstGLAllocator
     GstAllocator parent;
 
     GstCairoThreadInfo *thread_info;
+    gpointer gst_element;
+
+    gboolean (*acquire_context) (gpointer);
+    void (*release_context) (gpointer);
 };
 
 struct _GstGLBufferPool
