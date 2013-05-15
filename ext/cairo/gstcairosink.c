@@ -258,6 +258,7 @@ gst_cairo_sink_set_property (GObject * object, guint property_id,
     const GValue * value, GParamSpec * pspec)
 {
   GstCairoSink *cairosink = GST_CAIRO_SINK (object);
+  cairo_surface_type_t type;
 
   if (GST_STATE (GST_ELEMENT_CAST (cairosink)) != GST_STATE_NULL) {
     GST_WARNING_OBJECT (cairosink,
@@ -280,6 +281,22 @@ gst_cairo_sink_set_property (GObject * object, guint property_id,
 
         cairosink->device = cairo_surface_get_device (new_surface);
         cairo_device_reference (cairosink->device);
+
+        type = cairo_surface_get_type (cairosink->surface);
+        if (type == CAIRO_SURFACE_TYPE_GL) {
+          cairosink->surface_width =
+              cairo_gl_surface_get_width (cairosink->surface);
+          cairosink->surface_height =
+              cairo_gl_surface_get_height (cairosink->surface);
+        } else if (type == CAIRO_SURFACE_TYPE_IMAGE) {
+          cairosink->surface_width =
+              cairo_image_surface_get_width (cairosink->surface);
+          cairosink->surface_height =
+              cairo_image_surface_get_height (cairosink->surface);
+        } else {
+          cairosink->surface_width = 0;
+          cairosink->surface_height = 0;
+        }
       }
       break;
     }
@@ -378,6 +395,7 @@ _copy_buffer (GstStructure * params)
   GstMapInfo map_info;
   gint width, height;
   GstFlowReturn return_value = GST_FLOW_OK;
+  gfloat xscale, yscale;
 
   if (!gst_structure_get (params, "cairosink", G_TYPE_POINTER, &cairosink,
           "memory", G_TYPE_POINTER, &mem,
@@ -418,7 +436,15 @@ _copy_buffer (GstStructure * params)
     goto end;
   }
 
+  xscale = ((gfloat) cairosink->surface_width) / ((gfloat) width);
+  yscale = ((gfloat) cairosink->surface_height) / ((gfloat) height);
+  if (xscale == 0.0 || yscale == 0.0) {
+    xscale = 1.0;
+    yscale = 1.0;
+  }
+
   context = cairo_create (cairosink->surface);
+  cairo_scale (context, xscale, yscale);
   cairo_set_source_surface (context, surface, 0, 0);
   cairo_set_operator (context, CAIRO_OPERATOR_SOURCE);
   gl_debug ("cairo_paint()");
@@ -761,9 +787,13 @@ gst_cairo_sink_set_caps (GstBaseSink * base_sink, GstCaps * caps)
   }
 
   /* FIXME: create cairosink->surface here? */
-  if (cairosink->surface == NULL)
+  if (cairosink->surface == NULL) {
     cairosink->surface = gst_cairo_sink_create_display_surface (cairosink,
         width, height);
+    cairosink->surface_width = width;
+    cairosink->surface_height = height;
+
+  }
 
   if (!cairosink->surface)
     return FALSE;
