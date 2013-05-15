@@ -12,6 +12,7 @@ static cairo_surface_t *_egl_create_display_surface (gint width, gint height);
 
 static gboolean _egl_query_can_map (cairo_surface_t * surface);
 
+static void _egl_dispose (void);
 
 typedef struct
 {
@@ -23,6 +24,7 @@ GstCairoSystemEGL gst_cairo_system_egl = {
   {
         _egl_create_display_surface,
         _egl_query_can_map,
+        _egl_dispose,
       GST_CAIRO_SYSTEM_EGL},
   NULL,                         /* display */
 };
@@ -60,6 +62,52 @@ create_display (GstCairoSystemEGL * system)
     GST_ERROR ("Could not open display.");
 }
 
+static Window
+get_window (void)
+{
+  static Window window = None;
+
+  Display *display = get_display ();
+  if (!display)
+    return window;
+
+  window = XCreateSimpleWindow (display, DefaultRootWindow (display),
+      -1, -1, 1, 1, 0, 0, 0);
+  return window;
+}
+
+static Window
+get_display_window (gint width, gint height)
+{
+  static Window window = None;
+  static gint window_height = 0;
+  static gint window_width = 0;
+
+  Display *display = get_display ();
+  if (!display)
+    return window;
+
+  if (width == window_width && height == window_height && window)
+    return window;
+  else if (width == -1 || height == -1)
+    return window;
+
+  if (window) {
+    XUnmapWindow (display, window);
+    XDestroyWindow (display, window);
+    window = None;
+    window_width = 0;
+    window_height = 0;
+  }
+
+  window = XCreateSimpleWindow (display, DefaultRootWindow (display),
+      0, 0, width, height, 0, 0, 0);
+
+  window_width = width;
+  window_height = height;
+  return window;
+}
+
 /* Mostly cut and paste from glx-utils.c in cairo-gl-smoke-tests */
 static cairo_surface_t *
 _egl_create_display_surface (gint width, gint height)
@@ -92,8 +140,7 @@ _egl_create_display_surface (gint width, gint height)
 
 
   /* Create the XWindow. */
-  window = XCreateSimpleWindow (display, DefaultRootWindow (display),
-      0, 0, width, height, 0, 0, 0);
+  window = get_display_window (width, height);
 
   egl_display = eglGetDisplay ((EGLNativeDisplayType) display);
   if (egl_display == EGL_NO_DISPLAY)
@@ -149,4 +196,31 @@ _egl_query_can_map (cairo_surface_t * surface)
 {
   /* map not implemented yet */
   return FALSE;
+}
+
+void
+_egl_dispose (void)
+{
+  Window display_window;
+  Window window;
+  Display *display;
+
+  display = get_display ();
+  if (!display)
+    return;
+
+  display_window = get_display_window (-1, -1);
+  if (display_window != None) {
+    XUnmapWindow (display, display_window);
+    XDestroyWindow (display, display_window);
+  }
+
+  window = get_window ();
+  if (window != None) {
+    XUnmapWindow (display, window);
+    XDestroyWindow (display, window);
+  }
+
+  if (display)
+    XCloseDisplay (display);
 }

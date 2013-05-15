@@ -63,6 +63,7 @@ typedef enum
 struct _GstCairoSystem {
   cairo_surface_t *(*create_display_surface) (gint width, gint height);
   gboolean (*query_can_map) (cairo_surface_t *surface);
+  void (*dispose) (void);
   GstCairoSystemType system_type;
 };
 

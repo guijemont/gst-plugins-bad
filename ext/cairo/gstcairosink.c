@@ -355,8 +355,21 @@ gst_cairo_sink_get_property (GObject * object, guint property_id,
 void
 gst_cairo_sink_dispose (GObject * object)
 {
-  /* GstCairoSink *cairosink = GST_CAIRO_SINK (object); */
+  GstCairoSink *cairosink = GST_CAIRO_SINK (object);
+  if (cairosink->system) {
+    cairosink->system->dispose ();
+    cairosink->system = NULL;
+  }
 
+  if (cairosink->surface) {
+    cairo_surface_destroy (cairosink->surface);
+    cairosink->surface = NULL;
+  }
+
+  if (cairosink->device) {
+    cairo_device_destroy (cairosink->device);
+    cairosink->device = NULL;
+  }
   /* clean up as possible.  may be called multiple times */
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
@@ -738,8 +751,10 @@ gst_cairo_sink_set_caps (GstBaseSink * base_sink, GstCaps * caps)
   if (!cairosink->surface)
     return FALSE;
 
-  if (!cairosink->device)
+  if (!cairosink->device) {
     cairosink->device = cairo_surface_get_device (cairosink->surface);
+    cairo_device_reference (cairosink->device);
+  }
 
   cairosink->caps = gst_caps_ref (caps);
   cairosink->width = width;
