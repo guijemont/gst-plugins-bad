@@ -246,7 +246,7 @@ _do_map (GstStructure * structure)
 {
   GstGLMemory *glmem;
   GstGLAllocator *glallocator;
-  gpointer data_area;
+  gpointer data_area = NULL;
 
   if (!gst_structure_get (structure, "memory", G_TYPE_POINTER, &glmem,
           "allocator", G_TYPE_POINTER, &glallocator, NULL))

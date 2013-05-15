@@ -366,7 +366,7 @@ static void
 _copy_buffer (GstStructure * params)
 {
   GstMemory *mem;
-  cairo_surface_t *surface;
+  cairo_surface_t *surface = NULL;
   GstCairoSink *cairosink;
   cairo_t *context;
   GstMapInfo map_info;
