@@ -105,8 +105,6 @@ static void gst_cairo_sink_finalize (GObject * object);
 static gboolean gst_cairo_sink_start (GstBaseSink * base_sink);
 static gboolean gst_cairo_sink_stop (GstBaseSink * base_sink);
 static gboolean gst_cairo_sink_set_caps (GstBaseSink * sink, GstCaps * caps);
-static GstFlowReturn
-gst_cairo_sink_prepare (GstBaseSink * base_sink, GstBuffer * buf);
 
 static GstFlowReturn
 gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf);
@@ -213,7 +211,6 @@ gst_cairo_sink_class_init (GstCairoSinkClass * klass)
   base_sink_class->start = gst_cairo_sink_start;
   base_sink_class->stop = gst_cairo_sink_stop;
   base_sink_class->set_caps = gst_cairo_sink_set_caps;
-  base_sink_class->prepare = gst_cairo_sink_prepare;
   base_sink_class->propose_allocation = gst_cairo_sink_propose_allocation;
   video_sink_class->show_frame = GST_DEBUG_FUNCPTR (gst_cairo_sink_show_frame);
 
@@ -376,7 +373,7 @@ gst_cairo_sink_finalize (GObject * object)
 }
 
 static void
-_copy_buffer (GstStructure * params)
+_show_frame (GstStructure * params)
 {
   GstMemory *mem;
   cairo_surface_t *surface = NULL;
@@ -442,9 +439,7 @@ _copy_buffer (GstStructure * params)
   gl_debug ("cairo_paint() done");
   cairo_destroy (context);
 
-  GST_TRACE_OBJECT (cairosink,
-      "Copied texture/data from %" GST_PTR_FORMAT " to display surface", mem);
-
+  cairosink->backend->show (cairosink->surface);
 
 end:
 
@@ -462,18 +457,14 @@ end:
 }
 
 static GstFlowReturn
-gst_cairo_sink_prepare (GstBaseSink * base_sink, GstBuffer * buf)
+gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf)
 {
-  GstCairoSink *cairosink = GST_CAIRO_SINK (base_sink);
+  GstCairoSink *cairosink = GST_CAIRO_SINK (video_sink);
   GstStructure *params;
   GstMemory *mem;
   GstFlowReturn ret;
 
-  GST_TRACE_OBJECT (cairosink, "Got buffer %" GST_PTR_FORMAT, buf);
-
-  if (!cairosink->caps)
-    return GST_FLOW_NOT_NEGOTIATED;
-
+  GST_TRACE_OBJECT (video_sink, "Need to show buffer %" GST_PTR_FORMAT, buf);
   if (gst_buffer_n_memory (buf) != 1) {
     GST_ERROR_OBJECT (cairosink, "Handling of buffer with more than one "
         "GstMemory not implemented");
@@ -482,60 +473,11 @@ gst_cairo_sink_prepare (GstBaseSink * base_sink, GstBuffer * buf)
 
   mem = gst_buffer_peek_memory (buf, 0);
 
-  params = gst_structure_new ("copy-buffer",
+  params = gst_structure_new ("show-frame",
       "cairosink", G_TYPE_POINTER, cairosink,
       "memory", G_TYPE_POINTER, mem,
       "width", G_TYPE_INT, cairosink->width,
       "height", G_TYPE_INT, cairosink->height, NULL);
-  gst_cairo_thread_invoke_sync (cairosink->render_thread_info,
-      (GstCairoThreadFunction) _copy_buffer, params);
-
-  if (!gst_structure_get (params, "return-value", GST_TYPE_FLOW_RETURN, &ret,
-          NULL)) {
-    GST_WARNING_OBJECT (cairosink,
-        "Misterious issue when copying buffer to target surface");
-    ret = GST_FLOW_ERROR;
-  }
-
-  gst_structure_free (params);
-
-  GST_TRACE_OBJECT (cairosink, "Returning %s", gst_flow_get_name (ret));
-
-  return ret;
-}
-
-static void
-_show_frame (GstStructure * params)
-{
-  cairo_surface_t *surface;
-  GstCairoBackend *backend;
-  GstFlowReturn ret = GST_FLOW_OK;
-
-  if (!gst_structure_get (params, "surface", G_TYPE_POINTER, &surface,
-          "backend", G_TYPE_POINTER, &backend, NULL)) {
-    ret = GST_FLOW_ERROR;
-    goto end;
-  }
-
-  backend->show (surface);
-
-end:
-  gst_structure_set (params, "return-value", GST_TYPE_FLOW_RETURN, ret, NULL);
-}
-
-
-static GstFlowReturn
-gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf)
-{
-  GstCairoSink *cairosink = GST_CAIRO_SINK (video_sink);
-  GstStructure *params;
-  GstFlowReturn ret;
-
-  GST_TRACE_OBJECT (video_sink, "Need to show buffer %" GST_PTR_FORMAT, buf);
-
-  params = gst_structure_new ("show-frame",
-      "surface", G_TYPE_POINTER, cairosink->surface,
-      "backend", G_TYPE_POINTER, cairosink->backend, NULL);
   gst_cairo_thread_invoke_sync (cairosink->render_thread_info,
       (GstCairoThreadFunction) _show_frame, params);
 
