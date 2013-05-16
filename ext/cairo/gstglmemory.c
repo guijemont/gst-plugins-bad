@@ -76,6 +76,9 @@ static void gst_gl_allocator_mem_unmap (GstMemory * mem);
 static GstFlowReturn gst_gl_buffer_pool_alloc_buffer (GstBufferPool * pool,
     GstBuffer ** buffer, GstBufferPoolAcquireParams * params);
 
+static gboolean gst_gl_allocator_acquire_context_default (gpointer user_data);
+static void gst_gl_allocator_release_context_default (gpointer user_data);
+
 G_DEFINE_TYPE (GstGLAllocator, gst_gl_allocator, GST_TYPE_ALLOCATOR);
 
 static void
@@ -100,12 +103,24 @@ gst_gl_allocator_init (GstGLAllocator * glallocator)
 }
 
 GstGLAllocator *
-gst_gl_allocator_new (GstCairoThreadInfo * thread_info)
+gst_gl_allocator_new (GstCairoThreadInfo * thread_info,
+    GstGLAcquireContextFunc acquire_context,
+    GstGLReleaseContextFunc release_context, gpointer user_data)
 {
   GstGLAllocator *allocator = g_object_new (gst_gl_allocator_get_type (),
       NULL);
 
   allocator->thread_info = thread_info;
+
+  if (acquire_context && release_context) {
+    allocator->acquire_context = acquire_context;
+    allocator->release_context = release_context;
+    allocator->user_data = user_data;
+  } else {
+    allocator->acquire_context = gst_gl_allocator_acquire_context_default;
+    allocator->release_context = gst_gl_allocator_release_context_default;
+    allocator->user_data = NULL;
+  }
 
   return allocator;
 }
@@ -134,26 +149,22 @@ _do_alloc (GstStructure * structure)
   glmem->width = width;
   glmem->height = height;
 
-  /* FIXME: would we need to find a way to cairo_device_acqure/release here?
-   */
   glallocator = (GstGLAllocator *) allocator;
-  if (glallocator->acquire_context && glallocator->release_context) {
-    if (glallocator->acquire_context (glallocator->gst_element)) {
-      glGenTextures (1, &glmem->texture);
-      glBindTexture (GL_TEXTURE_2D, glmem->texture);
-      glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA,
-          GL_UNSIGNED_BYTE, NULL);
-      glBindTexture (GL_TEXTURE_2D, 0);
+  if (glallocator->acquire_context (glallocator->user_data)) {
+    glGenTextures (1, &glmem->texture);
+    glBindTexture (GL_TEXTURE_2D, glmem->texture);
+    glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA,
+        GL_UNSIGNED_BYTE, NULL);
+    glBindTexture (GL_TEXTURE_2D, 0);
 
 #ifdef CAIROSINK_USE_PBO
-      /* create PBO */
-      glGenBuffers (1, &glmem->pbo);
-      glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
-      glBufferData (GL_PIXEL_UNPACK_BUFFER, glmem->data_size, NULL, GL_STREAM_DRAW);
-      glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
+    /* create PBO */
+    glGenBuffers (1, &glmem->pbo);
+    glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
+    glBufferData (GL_PIXEL_UNPACK_BUFFER, glmem->data_size, NULL, GL_STREAM_DRAW);
+    glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
 #endif
-      glallocator->release_context (glallocator->gst_element);
-    }
+    glallocator->release_context (glallocator->user_data);
   }
 
   gst_structure_set (structure, "memory", G_TYPE_POINTER, glmem, NULL);
@@ -205,12 +216,10 @@ _do_free (GstStructure * structure)
           "allocator", G_TYPE_POINTER, &glallocator, NULL))
     return;
 
-  if (glallocator->acquire_context && glallocator->release_context) {
-    if (glallocator->acquire_context (glallocator->gst_element)) {
-      glDeleteBuffers (1, &glmem->pbo);
-      glDeleteTextures (1, &glmem->texture);
-      glallocator->release_context (glallocator->gst_element);
-    }
+  if (glallocator->acquire_context (glallocator->user_data)) {
+    glDeleteBuffers (1, &glmem->pbo);
+    glDeleteTextures (1, &glmem->texture);
+    glallocator->release_context (glallocator->user_data);
   }
   g_slice_free (GstGLMemory, glmem);
 }
@@ -243,22 +252,20 @@ _do_map (GstStructure * structure)
           "allocator", G_TYPE_POINTER, &glallocator, NULL))
     return;
 
-  if (glallocator->acquire_context && glallocator->release_context) {
-    if (glallocator->acquire_context (glallocator->gst_element)) {
-      gl_debug ("GL: map");
-      glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
+  if (glallocator->acquire_context (glallocator->user_data)) {
+    gl_debug ("GL: map");
+    glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
 
-      /* We put a NULL buffer so that GL discards the current buffer if 
-       * it is still being used, instead of waiting for the end of an 
-       * operation on it. Makes sure the call to glMapBuffer() won't 
-       * cause a sync */
-      glBufferData (GL_PIXEL_UNPACK_BUFFER, glmem->data_size, NULL,
-          GL_STREAM_DRAW);
+    /* We put a NULL buffer so that GL discards the current buffer if
+     * it is still being used, instead of waiting for the end of an
+     * operation on it. Makes sure the call to glMapBuffer() won't
+     * cause a sync */
+    glBufferData (GL_PIXEL_UNPACK_BUFFER, glmem->data_size, NULL,
+        GL_STREAM_DRAW);
 
-      data_area = glMapBuffer (GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
+    data_area = glMapBuffer (GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
 
-      glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
-    }
+    glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
   }
 
   gst_structure_set (structure, "data-area", G_TYPE_POINTER, data_area, NULL);
@@ -300,21 +307,19 @@ _do_unmap (GstStructure * structure)
           "allocator", G_TYPE_POINTER, &glallocator, NULL))
     return;
 
-  if (glallocator->acquire_context && glallocator->release_context) {
-    gl_debug ("GL: unmap");
-    glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
-    glUnmapBuffer (GL_PIXEL_UNPACK_BUFFER);
+  gl_debug ("GL: unmap");
+  glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
+  glUnmapBuffer (GL_PIXEL_UNPACK_BUFFER);
 
-    glBindTexture (GL_TEXTURE_2D, glmem->texture);
-    /* copies data from pbo to texture */
-    glTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, glmem->width,
-        glmem->height, GL_BGRA, GL_UNSIGNED_BYTE, 0);
+  glBindTexture (GL_TEXTURE_2D, glmem->texture);
+  /* copies data from pbo to texture */
+  glTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, glmem->width,
+      glmem->height, GL_BGRA, GL_UNSIGNED_BYTE, 0);
 
-    glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
-    glBindTexture (GL_TEXTURE_2D, 0);
-    glallocator->release_context (glallocator->gst_element);
-    gl_debug ("exit");
-  }
+  glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
+  glBindTexture (GL_TEXTURE_2D, 0);
+  glallocator->release_context (glallocator->user_data);
+  gl_debug ("exit");
 }
 
 static void
@@ -395,4 +400,15 @@ gst_gl_buffer_pool_new (GstGLAllocator * allocator, GstCaps * caps)
   gst_buffer_pool_set_config (GST_BUFFER_POOL_CAST (pool), config);
 
   return pool;
+}
+
+static gboolean
+gst_gl_allocator_acquire_context_default (gpointer user_data)
+{
+  return TRUE;
+}
+
+static void
+gst_gl_allocator_release_context_default (gpointer user_data)
+{
 }

@@ -74,16 +74,19 @@ typedef GstAllocatorClass GstGLAllocatorClass;
 typedef struct _GstGLBufferPool GstGLBufferPool;
 typedef GstVideoBufferPoolClass GstGLBufferPoolClass;
 
+typedef gboolean (*GstGLAcquireContextFunc) (gpointer user_data);
+typedef void (*GstGLReleaseContextFunc) (gpointer user_data);
+
 
 struct _GstGLAllocator
 {
     GstAllocator parent;
 
     GstCairoThreadInfo *thread_info;
-    gpointer gst_element;
 
-    gboolean (*acquire_context) (gpointer);
-    void (*release_context) (gpointer);
+    GstGLAcquireContextFunc acquire_context;
+    GstGLReleaseContextFunc release_context;
+    gpointer user_data;
 };
 
 struct _GstGLBufferPool
@@ -99,7 +102,10 @@ struct _GstGLBufferPool
 GType gst_gl_allocator_get_type (void);
 GType gst_gl_buffer_pool_get_type (void);
 
-GstGLAllocator * gst_gl_allocator_new (GstCairoThreadInfo *thread_info);
+GstGLAllocator * gst_gl_allocator_new (GstCairoThreadInfo *thread_info,
+        GstGLAcquireContextFunc acquire_context,
+        GstGLReleaseContextFunc release_context, gpointer user_data);
+
 GstBuffer * gst_gl_allocator_alloc_buffer (GstAllocator * allocator,
         guint width, guint height);
 
