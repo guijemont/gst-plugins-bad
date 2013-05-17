@@ -234,7 +234,7 @@ gst_cairo_sink_class_init (GstCairoSinkClass * klass)
       g_param_spec_boxed ("main-context",
           "GMainContext to use for graphic calls",
           "GMainContext to use for graphic calls (e.g. gl calls)",
-          G_TYPE_MAIN_CONTEXT, G_PARAM_READWRITE | G_PARAM_CONSTRUCT_ONLY));
+          G_TYPE_MAIN_CONTEXT, G_PARAM_READWRITE));
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_cairo_sink_sink_template));
@@ -258,6 +258,12 @@ gst_cairo_sink_set_property (GObject * object, guint property_id,
     const GValue * value, GParamSpec * pspec)
 {
   GstCairoSink *cairosink = GST_CAIRO_SINK (object);
+
+  if (GST_STATE (GST_ELEMENT_CAST (cairosink)) != GST_STATE_NULL) {
+    GST_WARNING_OBJECT (cairosink,
+        "Properties of cairosink can only be set in NULL state");
+    return;
+  }
 
   switch (property_id) {
     case PROP_CAIRO_SURFACE:
