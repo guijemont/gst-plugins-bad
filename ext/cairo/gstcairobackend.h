@@ -72,6 +72,7 @@ struct _GstCairoBackend
       cairo_device_t * device, GstMemory * mem);
   void (*destroy_surface) (cairo_surface_t * surface);
   void (*show) (cairo_surface_t * surface);
+  gboolean (*get_size) (cairo_surface_t *surface, gint *width, gint *height);
 
   GstCairoBackendType backend_type;
 };

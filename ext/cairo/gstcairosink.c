@@ -120,6 +120,9 @@ static gboolean gst_cairo_sink_acquire_context (gpointer abstract_element);
 
 static void gst_cairo_sink_release_context (gpointer abstract_element);
 
+static gboolean gst_cairo_sink_get_surface_size (GstCairoSink * cairosink,
+    gint * width, gint * height);
+
 enum
 {
   PROP_0,
@@ -258,7 +261,6 @@ gst_cairo_sink_set_property (GObject * object, guint property_id,
     const GValue * value, GParamSpec * pspec)
 {
   GstCairoSink *cairosink = GST_CAIRO_SINK (object);
-  cairo_surface_type_t type;
 
   if (GST_STATE (GST_ELEMENT_CAST (cairosink)) != GST_STATE_NULL) {
     GST_WARNING_OBJECT (cairosink,
@@ -282,21 +284,9 @@ gst_cairo_sink_set_property (GObject * object, guint property_id,
         cairosink->device = cairo_surface_get_device (new_surface);
         cairo_device_reference (cairosink->device);
 
-        type = cairo_surface_get_type (cairosink->surface);
-        if (type == CAIRO_SURFACE_TYPE_GL) {
-          cairosink->surface_width =
-              cairo_gl_surface_get_width (cairosink->surface);
-          cairosink->surface_height =
-              cairo_gl_surface_get_height (cairosink->surface);
-        } else if (type == CAIRO_SURFACE_TYPE_IMAGE) {
-          cairosink->surface_width =
-              cairo_image_surface_get_width (cairosink->surface);
-          cairosink->surface_height =
-              cairo_image_surface_get_height (cairosink->surface);
-        } else {
-          cairosink->surface_width = 0;
-          cairosink->surface_height = 0;
-        }
+        /* width and height are unknown for now */
+        cairosink->surface_width = 0;
+        cairosink->surface_height = 0;
       }
       break;
     }
@@ -793,6 +783,12 @@ gst_cairo_sink_set_caps (GstBaseSink * base_sink, GstCaps * caps)
     cairosink->surface_width = width;
     cairosink->surface_height = height;
 
+  } else {
+    if (!gst_cairo_sink_get_surface_size (cairosink, &cairosink->surface_width,
+            &cairosink->surface_height)) {
+      GST_WARNING_OBJECT (cairosink,
+          "could not determine the size of display surface");
+    }
   }
 
   if (!cairosink->surface)
@@ -881,4 +877,14 @@ gst_cairo_sink_release_context (gpointer user_data)
   GstCairoSink *cairosink = (GstCairoSink *) user_data;
   if (cairosink->device)
     cairo_device_release (cairosink->device);
+}
+
+static gboolean
+gst_cairo_sink_get_surface_size (GstCairoSink * cairosink, gint * width,
+    gint * height)
+{
+  /* Note: we make the assumption that the backend's get_size() can be
+   * used from any thread */
+
+  return cairosink->backend->get_size (cairosink->surface, width, height);
 }

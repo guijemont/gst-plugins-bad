@@ -30,10 +30,14 @@ static void _gl_destroy_surface (cairo_surface_t * surface);
 
 static void _gl_show (cairo_surface_t * surface);
 
+static gboolean _gl_get_size (cairo_surface_t * surface, gint * width,
+    gint * height);
+
 GstCairoBackend gst_cairo_backend_gl = {
   _gl_create_surface,
   _gl_destroy_surface,
   _gl_show,
+  _gl_get_size,
   GST_CAIRO_BACKEND_GL
 };
 
@@ -80,4 +84,19 @@ _gl_destroy_surface (cairo_surface_t * surface)
   gl_debug ("GL: destroy surface");
   cairo_surface_destroy (surface);
   gl_debug ("exit");
+}
+
+static gboolean
+_gl_get_size (cairo_surface_t * surface, gint * width, gint * height)
+{
+  int _width, _height;
+  _width = cairo_gl_surface_get_width (surface);
+  _height = cairo_gl_surface_get_height (surface);
+
+  if (!_width || !_height)
+    return FALSE;
+
+  *width = _width;
+  *height = _height;
+  return TRUE;
 }
