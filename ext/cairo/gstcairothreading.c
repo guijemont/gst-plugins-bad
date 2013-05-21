@@ -56,7 +56,7 @@ typedef struct
   gpointer user_data;
   GMutex *mutex;
   GCond *cond;
-  gpointer *last_data;
+  gboolean *done;
 } GstCairoFunctionInfo;
 
 static gboolean
@@ -66,7 +66,7 @@ _function_wrapper (GstCairoFunctionInfo * function_info)
   {
     function_info->function (function_info->user_data);
   }
-  *function_info->last_data = function_info->user_data;
+  *function_info->done = TRUE;
   g_cond_signal (function_info->cond);
   g_mutex_unlock (function_info->mutex);
 
@@ -79,12 +79,13 @@ void
 gst_cairo_main_context_invoke_sync (GMainContext * context,
     GMutex * mutex,
     GCond * cond,
-    gpointer * last_data, GstCairoThreadFunction function, gpointer user_data)
+    GstCairoThreadFunction function, gpointer user_data)
 {
+  gboolean done = FALSE;
   g_mutex_lock (mutex);
   {
     GstCairoFunctionInfo function_info =
-        { function, user_data, mutex, cond, last_data };
+        { function, user_data, mutex, cond, &done };
 
     g_main_context_invoke (context, (GSourceFunc) _function_wrapper,
         &function_info);
@@ -94,10 +95,19 @@ gst_cairo_main_context_invoke_sync (GMainContext * context,
     do {
       GST_TRACE ("waiting for cond");
       g_cond_wait (cond, mutex);
-    } while (*last_data != user_data);
+    } while (!done);
     GST_TRACE ("got cond");
   }
   g_mutex_unlock (mutex);
+}
+
+
+void
+gst_cairo_thread_invoke_sync (GstCairoThreadInfo * thread_info,
+    GstCairoThreadFunction function, gpointer user_data)
+{
+  gst_cairo_main_context_invoke_sync (thread_info->context,
+      &thread_info->mutex, &thread_info->cond, function, user_data);
 }
 
 GstCairoThreadInfo *
@@ -110,7 +120,6 @@ gst_cairo_thread_info_new (GMainContext * context)
   thread_info->context = g_main_context_ref (context);
   g_mutex_init (&thread_info->mutex);
   g_cond_init (&thread_info->cond);
-  thread_info->last_data = NULL;
 
   return thread_info;
 }
