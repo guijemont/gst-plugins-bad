@@ -50,6 +50,9 @@
 
 #include <gst/gst.h>
 
+GST_DEBUG_CATEGORY (gst_threading_debug_category);
+#define GST_CAT_DEFAULT gst_threading_debug_category
+
 typedef struct
 {
   GstCairoThreadFunction function;
@@ -62,13 +65,20 @@ typedef struct
 static gboolean
 _function_wrapper (GstCairoFunctionInfo * function_info)
 {
+  GST_TRACE ("about to get mutex, function %p (%p)", function_info->function,
+      function_info->user_data);
   g_mutex_lock (function_info->mutex);
+  GST_TRACE ("locked");
   {
     function_info->function (function_info->user_data);
   }
+  GST_TRACE ("setting done");
   *function_info->done = TRUE;
+  GST_TRACE ("signaling cond");
   g_cond_signal (function_info->cond);
+  GST_TRACE ("unlocking");
   g_mutex_unlock (function_info->mutex);
+  GST_TRACE ("unlocked");
 
   return FALSE;
 }
@@ -78,15 +88,16 @@ _function_wrapper (GstCairoFunctionInfo * function_info)
 void
 gst_cairo_main_context_invoke_sync (GMainContext * context,
     GMutex * mutex,
-    GCond * cond,
-    GstCairoThreadFunction function, gpointer user_data)
+    GCond * cond, GstCairoThreadFunction function, gpointer user_data)
 {
   gboolean done = FALSE;
+  GST_TRACE ("locking mutex for function %p (%p)", function, user_data);
   g_mutex_lock (mutex);
+  GST_TRACE ("locked");
   {
     GstCairoFunctionInfo function_info =
         { function, user_data, mutex, cond, &done };
-
+    GST_TRACE ("invoking");
     g_main_context_invoke (context, (GSourceFunc) _function_wrapper,
         &function_info);
 
@@ -98,7 +109,9 @@ gst_cairo_main_context_invoke_sync (GMainContext * context,
     } while (!done);
     GST_TRACE ("got cond");
   }
+  GST_TRACE ("unlocking");
   g_mutex_unlock (mutex);
+  GST_TRACE ("unlocked, done");
 }
 
 
@@ -114,6 +127,8 @@ GstCairoThreadInfo *
 gst_cairo_thread_info_new (GMainContext * context)
 {
   GstCairoThreadInfo *thread_info;
+  GST_DEBUG_CATEGORY_INIT (gst_threading_debug_category, "threading", 0,
+      "gstreamer threading tools");
 
   thread_info = g_slice_new (GstCairoThreadInfo);
 
@@ -121,6 +136,7 @@ gst_cairo_thread_info_new (GMainContext * context)
   g_mutex_init (&thread_info->mutex);
   g_cond_init (&thread_info->cond);
 
+  GST_TRACE ("created thread info %p for context %p", thread_info, context);
   return thread_info;
 }
 
