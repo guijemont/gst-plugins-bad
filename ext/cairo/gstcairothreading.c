@@ -86,32 +86,35 @@ _function_wrapper (GstCairoFunctionInfo * function_info)
 /* Runs function in context, which sits in another thread, and waits for
  * function to return. */
 void
-gst_cairo_main_context_invoke_sync (GMainContext * context,
-    GMutex * mutex,
-    GCond * cond, GstCairoThreadFunction function, gpointer user_data)
+gst_cairo_main_context_invoke_sync (GMainContext * context, GMutex * mutex,
+    GstCairoThreadFunction function, gpointer user_data)
 {
   gboolean done = FALSE;
+  GCond cond;
+
+  g_cond_init (&cond);
   GST_TRACE ("locking mutex for function %p (%p)", function, user_data);
   g_mutex_lock (mutex);
   GST_TRACE ("locked");
   {
     GstCairoFunctionInfo function_info =
-        { function, user_data, mutex, cond, &done };
+        { function, user_data, mutex, &cond, &done };
     GST_TRACE ("invoking");
     g_main_context_invoke (context, (GSourceFunc) _function_wrapper,
         &function_info);
 
     g_main_context_wakeup (context);
 
-    do {
+    while (!done) {
       GST_TRACE ("waiting for cond");
-      g_cond_wait (cond, mutex);
-    } while (!done);
+      g_cond_wait (&cond, mutex);
+    }
     GST_TRACE ("got cond");
   }
   GST_TRACE ("unlocking");
   g_mutex_unlock (mutex);
   GST_TRACE ("unlocked, done");
+  g_cond_clear (&cond);
 }
 
 
@@ -120,7 +123,7 @@ gst_cairo_thread_invoke_sync (GstCairoThreadInfo * thread_info,
     GstCairoThreadFunction function, gpointer user_data)
 {
   gst_cairo_main_context_invoke_sync (thread_info->context,
-      &thread_info->mutex, &thread_info->cond, function, user_data);
+      &thread_info->mutex, function, user_data);
 }
 
 GstCairoThreadInfo *
@@ -134,7 +137,6 @@ gst_cairo_thread_info_new (GMainContext * context)
 
   thread_info->context = g_main_context_ref (context);
   g_mutex_init (&thread_info->mutex);
-  g_cond_init (&thread_info->cond);
 
   GST_TRACE ("created thread info %p for context %p", thread_info, context);
   return thread_info;
@@ -145,6 +147,5 @@ gst_cairo_thread_info_destroy (GstCairoThreadInfo * thread_info)
 {
   g_main_context_unref (thread_info->context);
   g_mutex_clear (&thread_info->mutex);
-  g_cond_clear (&thread_info->cond);
   g_slice_free (GstCairoThreadInfo, thread_info);
 }

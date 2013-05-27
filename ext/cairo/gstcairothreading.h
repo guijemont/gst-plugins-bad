@@ -56,11 +56,10 @@ typedef void (*GstCairoThreadFunction) (gpointer data);
 typedef struct {
     GMainContext *context;
     GMutex mutex;
-    GCond cond;
 } GstCairoThreadInfo;
 
 void gst_cairo_main_context_invoke_sync (GMainContext *context, GMutex *mutex,
-        GCond *cond, GstCairoThreadFunction function, gpointer user_data);
+        GstCairoThreadFunction function, gpointer user_data);
 
 GstCairoThreadInfo *gst_cairo_thread_info_new (GMainContext *context);
 
