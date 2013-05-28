@@ -114,9 +114,9 @@ static gpointer gst_cairo_sink_thread_init (gpointer data);
 static gboolean gst_cairo_sink_propose_allocation (GstBaseSink * bsink,
     GstQuery * query);
 
-static gboolean gst_cairo_sink_acquire_context (gpointer abstract_element);
+static gboolean gst_cairo_sink_acquire_context (gpointer user_data);
 
-static void gst_cairo_sink_release_context (gpointer abstract_element);
+static void gst_cairo_sink_release_context (gpointer user_data);
 
 static gboolean gst_cairo_sink_get_surface_size (GstCairoSink * cairosink,
     gint * width, gint * height);
@@ -391,6 +391,13 @@ _show_frame (GstStructure * params)
     goto end;
   }
 
+  if (!gst_cairo_sink_acquire_context (cairosink)) {
+    return_value = GST_FLOW_ERROR;
+    GST_WARNING_OBJECT (cairosink, "could not acquire context");
+    goto end;
+  }
+
+
   if (mem->allocator == cairosink->allocator) {
     surface = cairosink->backend->create_surface (cairosink->backend,
         cairosink->device, mem);
@@ -442,6 +449,7 @@ _show_frame (GstStructure * params)
   cairosink->backend->show (cairosink->surface);
 
 end:
+  gst_cairo_sink_release_context (cairosink);
 
   if (mem->allocator == cairosink->allocator) {
     if (surface)
