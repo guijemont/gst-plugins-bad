@@ -62,7 +62,7 @@ _gl_debug (const char *function, const char *message)
   gchar *full_message = g_strdup_printf ("%s: %s", function, message);
 
   glStringMarkerGREMEDY (0, full_message);
-  GST_TRACE (message);
+  GST_TRACE ("%s", message);
 
   g_free (full_message);
 #endif

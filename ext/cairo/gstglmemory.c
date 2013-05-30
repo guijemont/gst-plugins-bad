@@ -64,6 +64,9 @@
 #include "gstcairogldebug.h"
 #include "gstglmemory.h"
 
+GST_DEBUG_CATEGORY (gst_glallocator_debug_category);
+#define GST_CAT_DEFAULT gst_glallocator_debug_category
+
 static void gst_gl_allocator_free (GstAllocator * allocator,
     GstMemory * memory);
 
@@ -85,6 +88,9 @@ static void
 gst_gl_allocator_class_init (GstGLAllocatorClass * klass)
 {
   GstAllocatorClass *allocator_class = GST_ALLOCATOR_CLASS (klass);
+
+  GST_DEBUG_CATEGORY_INIT (gst_glallocator_debug_category, "glallocator", 0,
+      "GL allocator/memory");
 
   allocator_class->alloc = NULL;
   allocator_class->free = gst_gl_allocator_free;
