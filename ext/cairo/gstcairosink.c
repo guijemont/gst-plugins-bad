@@ -375,24 +375,21 @@ gst_cairo_sink_finalize (GObject * object)
 static void
 _show_frame (GstStructure * params)
 {
-  GstMemory *mem;
+  GstMemory *mem = NULL;
   cairo_surface_t *surface = NULL;
-  GstCairoSink *cairosink;
+  GstCairoSink *cairosink = NULL;
   cairo_t *context;
   GstMapInfo map_info;
   gint width, height;
-  GstFlowReturn return_value = GST_FLOW_OK;
   gfloat xscale, yscale;
 
   if (!gst_structure_get (params, "cairosink", G_TYPE_POINTER, &cairosink,
           "memory", G_TYPE_POINTER, &mem,
           "width", G_TYPE_INT, &width, "height", G_TYPE_INT, &height, NULL)) {
-    return_value = GST_FLOW_ERROR;
     goto end;
   }
 
   if (!gst_cairo_sink_acquire_context (cairosink)) {
-    return_value = GST_FLOW_ERROR;
     GST_WARNING_OBJECT (cairosink, "could not acquire context");
     goto end;
   }
@@ -403,7 +400,6 @@ _show_frame (GstStructure * params)
         cairosink->device, mem);
     if (!surface) {
       GST_WARNING_OBJECT (cairosink, "Backend could not create new surface");
-      return_value = GST_FLOW_ERROR;
       goto end;
     }
   } else if (gst_memory_map (mem, &map_info, GST_MAP_READ)) {
@@ -414,7 +410,6 @@ _show_frame (GstStructure * params)
       GST_ERROR_OBJECT (cairosink, "Incompatible stride? width:%d height:%d "
           "expected stride: %d expected size: %d actual size: %ld",
           width, height, stride, stride * height, map_info.size);
-      return_value = GST_FLOW_ERROR;
       goto end;
     }
 
@@ -426,7 +421,6 @@ _show_frame (GstStructure * params)
   } else {
     GST_ERROR_OBJECT (cairosink,
         "Do not know how to upload data from %" GST_PTR_FORMAT, mem);
-    return_value = GST_FLOW_ERROR;
     goto end;
   }
 
@@ -460,8 +454,13 @@ end:
     if (map_info.data)
       gst_memory_unmap (mem, &map_info);
   }
-  gst_structure_set (params, "return-value", GST_TYPE_FLOW_RETURN,
-      return_value, NULL);
+  if (mem)
+    gst_memory_unref (mem);
+
+  if (cairosink)
+    gst_object_unref (cairosink);
+
+  gst_structure_free (params);
 }
 
 static GstFlowReturn
@@ -470,7 +469,6 @@ gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf)
   GstCairoSink *cairosink = GST_CAIRO_SINK (video_sink);
   GstStructure *params;
   GstMemory *mem;
-  GstFlowReturn ret;
 
   GST_TRACE_OBJECT (video_sink, "Need to show buffer %" GST_PTR_FORMAT, buf);
   if (gst_buffer_n_memory (buf) != 1) {
@@ -482,23 +480,17 @@ gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf)
   mem = gst_buffer_peek_memory (buf, 0);
 
   params = gst_structure_new ("show-frame",
-      "cairosink", G_TYPE_POINTER, cairosink,
-      "memory", G_TYPE_POINTER, mem,
+      "cairosink", G_TYPE_POINTER, gst_object_ref (cairosink),
+      "memory", G_TYPE_POINTER, gst_memory_ref (mem),
       "width", G_TYPE_INT, cairosink->width,
       "height", G_TYPE_INT, cairosink->height, NULL);
-  gst_cairo_thread_invoke_sync (cairosink->render_thread_info,
-      (GstCairoThreadFunction) _show_frame, params);
 
-  if (!gst_structure_get (params, "return-value", GST_TYPE_FLOW_RETURN, &ret,
-          NULL)) {
-    GST_WARNING_OBJECT (cairosink,
-        "Misterious issue when showing target surface");
-    ret = GST_FLOW_ERROR;
-  }
+  g_main_context_invoke (cairosink->render_thread_info->context,
+      (GSourceFunc) _show_frame, params);
 
-  GST_TRACE_OBJECT (cairosink, "Returning %s", gst_flow_get_name (ret));
+  GST_TRACE_OBJECT (cairosink, "Returning");
 
-  return ret;
+  return GST_FLOW_OK;
 }
 
 
