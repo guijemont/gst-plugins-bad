@@ -303,15 +303,15 @@ gst_gl_allocator_mem_map (GstMemory * mem, gsize maxsize, GstMapFlags flags)
   return data_area;
 }
 
-static void
+static gboolean
 _do_unmap (GstStructure * structure)
 {
-  GstGLMemory *glmem;
-  GstGLAllocator *glallocator;
+  GstGLMemory *glmem = NULL;
+  GstGLAllocator *glallocator = NULL;
 
   if (!gst_structure_get (structure, "memory", G_TYPE_POINTER, &glmem,
           "allocator", G_TYPE_POINTER, &glallocator, NULL))
-    return;
+    goto end;
 
   gl_debug ("GL: unmap");
   glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
@@ -326,6 +326,16 @@ _do_unmap (GstStructure * structure)
   glBindTexture (GL_TEXTURE_2D, 0);
   glallocator->release_context (glallocator->user_data);
   gl_debug ("exit");
+
+end:
+  gst_structure_free (structure);
+  if (glallocator)
+    gst_object_unref (glallocator);
+
+  if (glmem)
+    gst_memory_unref (GST_MEMORY_CAST (glmem));
+
+  return FALSE;
 }
 
 static void
@@ -335,13 +345,12 @@ gst_gl_allocator_mem_unmap (GstMemory * mem)
   GstGLAllocator *glallocator = (GstGLAllocator *) mem->allocator;
 
   structure =
-      gst_structure_new ("gl-unmap", "memory", G_TYPE_POINTER, mem,
-      "allocator", G_TYPE_POINTER, glallocator, NULL);
+      gst_structure_new ("gl-unmap",
+      "memory", G_TYPE_POINTER, gst_memory_ref (mem),
+      "allocator", G_TYPE_POINTER, gst_object_ref (glallocator), NULL);
 
-  gst_cairo_thread_invoke_sync (glallocator->thread_info,
-      (GstCairoThreadFunction) _do_unmap, structure);
-
-  gst_structure_free (structure);
+  g_main_context_invoke (glallocator->thread_info->context,
+      (GSourceFunc) _do_unmap, structure);
 }
 #endif /* CAIROSINK_USE_PBO */
 
