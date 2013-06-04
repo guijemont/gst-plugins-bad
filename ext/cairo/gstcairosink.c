@@ -372,7 +372,7 @@ gst_cairo_sink_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
-static void
+static gboolean
 _show_frame (GstStructure * params)
 {
   GstMemory *mem = NULL;
@@ -461,6 +461,8 @@ end:
     gst_object_unref (cairosink);
 
   gst_structure_free (params);
+
+  return FALSE;
 }
 
 static GstFlowReturn
