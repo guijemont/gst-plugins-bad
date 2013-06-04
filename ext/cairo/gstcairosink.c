@@ -379,7 +379,7 @@ _show_frame (GstStructure * params)
   cairo_surface_t *surface = NULL;
   GstCairoSink *cairosink = NULL;
   cairo_t *context;
-  GstMapInfo map_info;
+  GstMapInfo map_info = { 0, };
   gint width, height;
   gfloat xscale, yscale;
 
