@@ -272,6 +272,7 @@ _do_map (GstStructure * structure)
     data_area = glMapBuffer (GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY);
 
     glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
+    glallocator->release_context (glallocator->user_data);
   }
 
   gst_structure_set (structure, "data-area", G_TYPE_POINTER, data_area, NULL);
@@ -314,6 +315,7 @@ _do_unmap (GstStructure * structure)
     goto end;
 
   gl_debug ("GL: unmap");
+  glallocator->acquire_context (glallocator->user_data);
   glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
   glUnmapBuffer (GL_PIXEL_UNPACK_BUFFER);
 
