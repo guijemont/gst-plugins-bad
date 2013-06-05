@@ -12,10 +12,19 @@ static cairo_surface_t *_egl_create_display_surface (gint width, gint height);
 
 static gboolean _egl_query_can_map (cairo_surface_t * surface);
 
-GstCairoSystem gst_cairo_system_egl = {
-  _egl_create_display_surface,
-  _egl_query_can_map,
-  GST_CAIRO_SYSTEM_EGL
+
+typedef struct
+{
+  GstCairoSystem parent;
+  Display *display;
+} GstCairoSystemEGL;
+
+GstCairoSystemEGL gst_cairo_system_egl = {
+  {
+        _egl_create_display_surface,
+        _egl_query_can_map,
+      GST_CAIRO_SYSTEM_EGL},
+  NULL,                         /* display */
 };
 
 static EGLint multisampleAttributes[] = {
@@ -41,11 +50,9 @@ static EGLint singleSampleAttributes[] = {
 };
 
 static Display *
-get_display (void)
+create_display (void)
 {
-  static Display *display = NULL;
-  if (display)
-    return NULL;
+  Display *display;
 
   display = XOpenDisplay (NULL);
   if (!display) {
@@ -77,9 +84,14 @@ _egl_create_display_surface (gint width, gint height)
   cairo_device_t *cairo_device;
   cairo_surface_t *cairo_surface;
 
-  display = get_display ();
-  if (!display)
-    return FALSE;
+  if (gst_cairo_system_egl.display)
+    /* We already created display and surface and don't keep track of the
+     * surface. */
+    return NULL;
+
+  gst_cairo_system_egl.display = create_display ();
+  display = gst_cairo_system_egl.display;
+
 
   /* Create the XWindow. */
   window = XCreateSimpleWindow (display, DefaultRootWindow (display),
