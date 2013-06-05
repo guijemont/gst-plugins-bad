@@ -10,11 +10,17 @@ static cairo_surface_t *_glx_create_display_surface (gint width, gint height);
 
 static gboolean _glx_query_can_map (cairo_surface_t * surface);
 
+typedef struct
+{
+  GstCairoSystem parent;
+  Display *display;
+} GstCairoSystemGLX;
 
-GstCairoSystem gst_cairo_system_glx = {
-  _glx_create_display_surface,
-  _glx_query_can_map,
-  GST_CAIRO_SYSTEM_GLX
+GstCairoSystemGLX gst_cairo_system_glx = {
+  {_glx_create_display_surface,
+        _glx_query_can_map,
+      GST_CAIRO_SYSTEM_GLX},
+  NULL
 };
 
 #define GL_VERSION_ENCODE(major, minor) ( \
@@ -67,11 +73,9 @@ get_gl_version (void)
 }
 
 static Display *
-get_display (void)
+create_display (void)
 {
-  static Display *display = NULL;
-  if (display)
-    return display;
+  Display *display;
 
   display = XOpenDisplay (NULL);
   if (!display) {
@@ -105,7 +109,11 @@ _glx_create_display_surface (gint width, gint height)
 
   gl_debug ("GLX: creating display window and surface");
 
-  display = get_display ();
+  if (!gst_cairo_system_glx.display)
+    gst_cairo_system_glx.display = create_display ();
+
+  display = gst_cairo_system_glx.display;
+
   if (!display)
     return NULL;
 
@@ -142,10 +150,10 @@ _glx_create_display_surface (gint width, gint height)
       glXCreateNewContext (display, fb_configs[0], GLX_RGBA_TYPE, NULL, True);
 
   /* Map the window to the screen, and wait for it to appear */
-  XMapWindow (get_display (), window);
-  XIfEvent (get_display (), &event, waitForNotify, (XPointer) window);
+  XMapWindow (display, window);
+  XIfEvent (display, &event, waitForNotify, (XPointer) window);
 
-  device = cairo_glx_device_create (get_display (), glx_context);
+  device = cairo_glx_device_create (display, glx_context);
   surface = cairo_gl_surface_create_for_window (device, window, width, height);
 
   gl_debug ("exit");
@@ -183,7 +191,10 @@ _glx_query_can_map (cairo_surface_t * surface)
     return FALSE;
   }
 
-  display = get_display ();
+  if (!gst_cairo_system_glx.display)
+    gst_cairo_system_glx.display = create_display ();
+
+  display = gst_cairo_system_glx.display;
   if (!display)
     return FALSE;
 
