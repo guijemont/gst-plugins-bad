@@ -18,6 +18,9 @@ typedef struct
 {
   GstCairoSystem parent;
   Display *display;
+  Window display_window;
+  gint display_window_width;
+  gint display_window_height;
 } GstCairoSystemEGL;
 
 GstCairoSystemEGL gst_cairo_system_egl = {
@@ -27,6 +30,9 @@ GstCairoSystemEGL gst_cairo_system_egl = {
         _egl_dispose,
       GST_CAIRO_SYSTEM_EGL},
   NULL,                         /* display */
+  None,                         /* display_window */
+  0,                            /* display_window_width */
+  0                             /* display_window_height */
 };
 
 static EGLint multisampleAttributes[] = {
@@ -62,58 +68,36 @@ create_display (GstCairoSystemEGL * system)
     GST_ERROR ("Could not open display.");
 }
 
-static Window
-get_window (void)
+static void
+create_display_window (GstCairoSystemEGL * system, gint width, gint height)
 {
-  static Window window = None;
+  if (!system->display)
+    return;
 
-  Display *display = get_display ();
-  if (!display)
-    return window;
+  if (width == system->display_window_width
+      && height == system->display_window_height
+      && system->display_window != None)
+    /* nothing to create, we already have a display window matching width and
+     * height */
+    return;
 
-  window = XCreateSimpleWindow (display, DefaultRootWindow (display),
-      -1, -1, 1, 1, 0, 0, 0);
-  return window;
-}
-
-static Window
-get_display_window (gint width, gint height)
-{
-  static Window window = None;
-  static gint window_height = 0;
-  static gint window_width = 0;
-
-  Display *display = get_display ();
-  if (!display)
-    return window;
-
-  if (width == window_width && height == window_height && window)
-    return window;
-  else if (width == -1 || height == -1)
-    return window;
-
-  if (window) {
-    XUnmapWindow (display, window);
-    XDestroyWindow (display, window);
-    window = None;
-    window_width = 0;
-    window_height = 0;
+  if (system->display_window) {
+    XUnmapWindow (system->display, system->display_window);
+    XDestroyWindow (system->display, system->display_window);
   }
 
-  window = XCreateSimpleWindow (display, DefaultRootWindow (display),
-      0, 0, width, height, 0, 0, 0);
+  system->display_window = XCreateSimpleWindow (system->display,
+      DefaultRootWindow (system->display), 0, 0, width, height, 0, 0, 0);
 
-  window_width = width;
-  window_height = height;
-  return window;
+  system->display_window_width = width;
+  system->display_window_height = height;
 }
 
 /* Mostly cut and paste from glx-utils.c in cairo-gl-smoke-tests */
 static cairo_surface_t *
 _egl_create_display_surface (gint width, gint height)
 {
-  Window window;
-  Display *display;
+  GstCairoSystemEGL *system = &gst_cairo_system_egl;
 
   EGLDisplay egl_display;
   EGLContext egl_context;
@@ -130,19 +114,17 @@ _egl_create_display_surface (gint width, gint height)
   cairo_device_t *cairo_device;
   cairo_surface_t *cairo_surface;
 
-  if (gst_cairo_system_egl.display)
+  if (system->display)
     /* We already created display and surface and don't keep track of the
      * surface. */
     return NULL;
 
-  create_display (&gst_cairo_system_egl);
-  display = gst_cairo_system_egl.display;
-
+  create_display (system);
 
   /* Create the XWindow. */
-  window = get_display_window (width, height);
+  create_display_window (system, width, height);
 
-  egl_display = eglGetDisplay ((EGLNativeDisplayType) display);
+  egl_display = eglGetDisplay ((EGLNativeDisplayType) system->display);
   if (egl_display == EGL_NO_DISPLAY)
     goto CLEANUP_X;
 
@@ -167,12 +149,12 @@ _egl_create_display_surface (gint width, gint height)
     goto CLEANUP_DISPLAY;
 
   egl_surface = eglCreateWindowSurface (egl_display, egl_config,
-      (NativeWindowType) window, NULL);
+      (NativeWindowType) system->display_window, NULL);
   if (egl_surface == EGL_NO_SURFACE)
     goto CLEANUP_CONTEXT;
 
-  XMapWindow (display, window);
-  XFlush (display);
+  XMapWindow (system->display, system->display_window);
+  XFlush (system->display);
 
   cairo_device = cairo_egl_device_create (egl_display, egl_context);
   cairo_surface = cairo_gl_surface_create_for_egl (cairo_device, egl_surface,
@@ -186,8 +168,8 @@ CLEANUP_DISPLAY:
   eglTerminate (egl_display);
 CLEANUP_X:
   GST_WARNING ("Could not initialise EGL context correctly");
-  XDestroyWindow (display, window);
-  XCloseDisplay (display);
+  XDestroyWindow (system->display, system->display_window);
+  XCloseDisplay (system->display);
   return NULL;
 }
 
@@ -201,26 +183,15 @@ _egl_query_can_map (cairo_surface_t * surface)
 void
 _egl_dispose (void)
 {
-  Window display_window;
-  Window window;
-  Display *display;
+  GstCairoSystemEGL *system = &gst_cairo_system_egl;
 
-  display = get_display ();
-  if (!display)
+  if (!system->display)
     return;
 
-  display_window = get_display_window (-1, -1);
-  if (display_window != None) {
-    XUnmapWindow (display, display_window);
-    XDestroyWindow (display, display_window);
+  if (system->display_window != None) {
+    XUnmapWindow (system->display, system->display_window);
+    XDestroyWindow (system->display, system->display_window);
   }
 
-  window = get_window ();
-  if (window != None) {
-    XUnmapWindow (display, window);
-    XDestroyWindow (display, window);
-  }
-
-  if (display)
-    XCloseDisplay (display);
+  XCloseDisplay (system->display);
 }
