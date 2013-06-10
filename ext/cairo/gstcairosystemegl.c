@@ -49,17 +49,15 @@ static EGLint singleSampleAttributes[] = {
   EGL_NONE
 };
 
-static Display *
-create_display (void)
+static void
+create_display (GstCairoSystemEGL * system)
 {
-  Display *display;
+  if (system->display)
+    return;
 
-  display = XOpenDisplay (NULL);
-  if (!display) {
+  system->display = XOpenDisplay (NULL);
+  if (!system->display)
     GST_ERROR ("Could not open display.");
-    return NULL;
-  }
-  return display;
 }
 
 /* Mostly cut and paste from glx-utils.c in cairo-gl-smoke-tests */
@@ -89,7 +87,7 @@ _egl_create_display_surface (gint width, gint height)
      * surface. */
     return NULL;
 
-  gst_cairo_system_egl.display = create_display ();
+  create_display (&gst_cairo_system_egl);
   display = gst_cairo_system_egl.display;
 
 
