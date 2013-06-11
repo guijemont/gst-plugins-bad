@@ -16,6 +16,9 @@ typedef struct
 {
   GstCairoSystem parent;
   Display *display;
+  Window display_window;
+  gint display_window_width;
+  gint display_window_height;
 } GstCairoSystemGLX;
 
 GstCairoSystemGLX gst_cairo_system_glx = {
@@ -75,28 +78,21 @@ get_gl_version (void)
   return GL_VERSION_ENCODE (major, minor);
 }
 
-static Display *
-create_display (void)
+static void
+create_display (GstCairoSystemGLX * system)
 {
-  Display *display;
+  if (system->display)
+    return;
 
-  display = XOpenDisplay (NULL);
-  if (!display) {
+  system->display = XOpenDisplay (NULL);
+  if (!system->display)
     GST_ERROR ("Could not open display.");
-    return NULL;
-  }
-  return display;
 }
 
-static Window
-get_display_window (gint width, gint height)
+static void
+create_display_window (GstCairoSystemGLX * system, gint width, gint height)
 {
-  static Window window = None;
-  static gint window_width = 0;
-  static gint window_height = 0;
-
   Window root_window;
-  Display *display;
   XVisualInfo *visual_info;
   XSetWindowAttributes window_attributes;
   GLXFBConfig *fb_configs;
@@ -105,68 +101,56 @@ get_display_window (gint width, gint height)
 
   gl_debug ("GLX: creating display window and surface");
 
-  if (!gst_cairo_system_glx.display)
-    gst_cairo_system_glx.display = create_display ();
+  if (!system->display)
+    create_display (system);
 
-  display = gst_cairo_system_glx.display;
+  if (!system->display)
+    return;
 
-  if (!display)
-    return None;
+  /* if request width, height match, we keep the existing window */
+  if (system->display_window_width == width
+      && system->display_window_height == height
+      && system->display_window != None)
+    return;
 
-  /* if request width, height match, we return valid windo
-   * if request width or height == -1, we return existing window,
-   * this is used for _glx_dispose */
-  if (window_width == width && window_height == height && window)
-    return window;
-  else if (width == -1 || height == -1)
-    return window;
-
-  if (window) {
-    XUnmapWindow (display, window);
-    XDestroyWindow (display, window);
-    window = None;
-    window_width = 0;
-    window_height = 0;
+  if (system->display_window) {
+    XUnmapWindow (system->display, system->display_window);
+    XDestroyWindow (system->display, system->display_window);
   }
 
-  display = get_display ();
-  if (!display)
-    return None;
-
   fb_configs =
-      glXChooseFBConfig (display, DefaultScreen (display),
+      glXChooseFBConfig (system->display, DefaultScreen (system->display),
       multisampleAttributes, &num_returned);
   if (fb_configs == NULL) {
     fb_configs =
-        glXChooseFBConfig (display, DefaultScreen (display),
+        glXChooseFBConfig (system->display, DefaultScreen (system->display),
         singleSampleAttributes, &num_returned);
   }
 
   if (fb_configs == NULL) {
     GST_ERROR ("Unable to create a GL context with appropriate attributes.");
     /* FIXME: leak? */
-    return None;
+    return;
   }
 
-  visual_info = glXGetVisualFromFBConfig (display, fb_configs[0]);
-  root_window = RootWindow (display, visual_info->screen);
+  visual_info = glXGetVisualFromFBConfig (system->display, fb_configs[0]);
+  root_window = RootWindow (system->display, visual_info->screen);
 
   window_attributes.border_pixel = 0;
   window_attributes.event_mask = StructureNotifyMask;
   window_attributes.colormap =
-      XCreateColormap (display, root_window, visual_info->visual, AllocNone);
+      XCreateColormap (system->display, root_window, visual_info->visual,
+      AllocNone);
 
   /* Create the XWindow. */
-  window = XCreateWindow (display, root_window, 0, 0, width, height,
-      0, visual_info->depth, InputOutput, visual_info->visual,
+  system->display_window = XCreateWindow (system->display, root_window, 0, 0,
+      width, height, 0, visual_info->depth, InputOutput, visual_info->visual,
       CWBorderPixel | CWColormap | CWEventMask, &window_attributes);
 
   XFree (visual_info);
 
-  window_width = width;
-  window_height = height;
-
-  return window;
+  system->display_window_width = width;
+  system->display_window_height = height;
 }
 
 static Bool
@@ -179,11 +163,10 @@ waitForNotify (Display * dpy, XEvent * event, XPointer arg)
 static cairo_surface_t *
 _glx_create_display_surface (gint width, gint height)
 {
-  Window window;
-  Display *display;
   XEvent event;
   GLXContext glx_context;
   GLXFBConfig *fb_configs;
+  GstCairoSystemGLX *system = &gst_cairo_system_glx;
 
   cairo_device_t *device;
   cairo_surface_t *surface;
@@ -191,16 +174,18 @@ _glx_create_display_surface (gint width, gint height)
 
   gl_debug ("GLX: creating display window and surface");
 
-  display = get_display ();
-  if (!display)
+  if (!system->display)
+    create_display (system);
+
+  if (!system->display)
     return NULL;
 
   fb_configs =
-      glXChooseFBConfig (display, DefaultScreen (display),
+      glXChooseFBConfig (system->display, DefaultScreen (system->display),
       multisampleAttributes, &num_returned);
   if (fb_configs == NULL) {
     fb_configs =
-        glXChooseFBConfig (display, DefaultScreen (display),
+        glXChooseFBConfig (system->display, DefaultScreen (system->display),
         singleSampleAttributes, &num_returned);
   }
 
@@ -210,19 +195,22 @@ _glx_create_display_surface (gint width, gint height)
     return NULL;
   }
 
-  /* get window */
-  window = get_display_window (width, height);
+  /* create window if necessary */
+  create_display_window (system, width, height);
 
   /* Create a GLX context for OpenGL rendering */
   glx_context =
-      glXCreateNewContext (display, fb_configs[0], GLX_RGBA_TYPE, NULL, True);
+      glXCreateNewContext (system->display, fb_configs[0], GLX_RGBA_TYPE, NULL,
+      True);
 
   /* Map the window to the screen, and wait for it to appear */
-  XMapWindow (display, window);
-  XIfEvent (display, &event, waitForNotify, (XPointer) window);
+  XMapWindow (system->display, system->display_window);
+  XIfEvent (system->display, &event, waitForNotify,
+      (XPointer) system->display_window);
 
-  device = cairo_glx_device_create (display, glx_context);
-  surface = cairo_gl_surface_create_for_window (device, window, width, height);
+  device = cairo_glx_device_create (system->display, glx_context);
+  surface = cairo_gl_surface_create_for_window (device,
+      system->display_window, width, height);
 
   gl_debug ("exit");
   return surface;
@@ -231,7 +219,6 @@ _glx_create_display_surface (gint width, gint height)
 static gboolean
 _glx_query_can_map (cairo_surface_t * surface)
 {
-  Display *display;
   GLXContext glx_context;
   int gl_version;
 
@@ -239,10 +226,13 @@ _glx_query_can_map (cairo_surface_t * surface)
   XVisualInfo *visual_info;
   XSetWindowAttributes window_attributes;
   GLXFBConfig *fb_configs;
+  GstCairoSystemGLX *system = &gst_cairo_system_glx;
 
   int num_returned = 0;
 
   if (surface) {
+    Display *display;
+
     cairo_device_t *device = cairo_surface_get_device (surface);
     display = cairo_glx_device_get_display (device);
     glx_context = cairo_glx_device_get_context (device);
@@ -259,15 +249,14 @@ _glx_query_can_map (cairo_surface_t * surface)
     return FALSE;
   }
 
-  if (!gst_cairo_system_glx.display)
-    gst_cairo_system_glx.display = create_display ();
+  if (!system->display)
+    create_display (system);
 
-  display = gst_cairo_system_glx.display;
-  if (!display)
+  if (!system->display)
     return FALSE;
 
   fb_configs =
-      glXChooseFBConfig (display, DefaultScreen (display),
+      glXChooseFBConfig (system->display, DefaultScreen (system->display),
       singleSampleAttributes, &num_returned);
 
   if (fb_configs == NULL) {
@@ -276,21 +265,23 @@ _glx_query_can_map (cairo_surface_t * surface)
     return FALSE;
   }
 
-  visual_info = glXGetVisualFromFBConfig (display, fb_configs[0]);
-  root_window = RootWindow (display, visual_info->screen);
+  visual_info = glXGetVisualFromFBConfig (system->display, fb_configs[0]);
+  root_window = RootWindow (system->display, visual_info->screen);
 
   window_attributes.border_pixel = 0;
   window_attributes.event_mask = StructureNotifyMask;
   window_attributes.colormap =
-      XCreateColormap (display, root_window, visual_info->visual, AllocNone);
+      XCreateColormap (system->display, root_window, visual_info->visual,
+      AllocNone);
 
   /* Create the XWindow. */
-  window = XCreateWindow (display, root_window, 0, 0, 1, 1,
+  window = XCreateWindow (system->display, root_window, 0, 0, 1, 1,
       0, visual_info->depth, InputOutput, visual_info->visual,
       CWBorderPixel | CWColormap | CWEventMask, &window_attributes);
 
   glx_context =
-      glXCreateNewContext (display, fb_configs[0], GLX_RGBA_TYPE, NULL, True);
+      glXCreateNewContext (system->display, fb_configs[0], GLX_RGBA_TYPE, NULL,
+      True);
   XFree (visual_info);
 
   if (!glx_context) {
@@ -300,14 +291,14 @@ _glx_query_can_map (cairo_surface_t * surface)
   }
 
   /* switch to current context */
-  glXMakeCurrent (display, window, glx_context);
+  glXMakeCurrent (system->display, window, glx_context);
   gl_version = get_gl_version ();
 
   /* cleanup */
-  glXMakeCurrent (display, None, None);
-  XDestroyWindow (display, window);
-  glXDestroyContext (display, glx_context);
-  XSync (display, True);
+  glXMakeCurrent (system->display, None, None);
+  XDestroyWindow (system->display, window);
+  glXDestroyContext (system->display, glx_context);
+  XSync (system->display, True);
 
   if (gl_version >= GL_VERSION_ENCODE (1, 5))
     return TRUE;
@@ -318,19 +309,15 @@ _glx_query_can_map (cairo_surface_t * surface)
 void
 _glx_dispose (void)
 {
-  Window window;
-  Display *display;
+  GstCairoSystemGLX *system = &gst_cairo_system_glx;
 
-  display = get_display ();
-  if (!display)
+  if (!system->display)
     return;
 
-  window = get_display_window (-1, -1);
-  if (window != None) {
-    XUnmapWindow (display, window);
-    XDestroyWindow (display, window);
+  if (system->display_window != None) {
+    XUnmapWindow (system->display, system->display_window);
+    XDestroyWindow (system->display, system->display_window);
   }
 
-  if (display)
-    XCloseDisplay (display);
+  XCloseDisplay (system->display);
 }
