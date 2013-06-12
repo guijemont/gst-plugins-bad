@@ -389,6 +389,7 @@ static gboolean
 _show_frame (GstStructure * params)
 {
   GstMemory *mem = NULL;
+  GstBuffer *buf = NULL;
   cairo_surface_t *surface = NULL;
   GstCairoSink *cairosink = NULL;
   cairo_t *context;
@@ -397,7 +398,7 @@ _show_frame (GstStructure * params)
   gfloat xscale, yscale;
 
   if (!gst_structure_get (params, "cairosink", G_TYPE_POINTER, &cairosink,
-          "memory", G_TYPE_POINTER, &mem,
+          "buffer", G_TYPE_POINTER, &buf,
           "width", G_TYPE_INT, &width, "height", G_TYPE_INT, &height, NULL)) {
     goto end;
   }
@@ -407,6 +408,7 @@ _show_frame (GstStructure * params)
     goto end;
   }
 
+  mem = gst_buffer_peek_memory (buf, 0);
 
   if (mem->allocator == cairosink->allocator) {
     surface = cairosink->backend->create_surface (cairosink->backend,
@@ -467,8 +469,8 @@ end:
     if (map_info.data)
       gst_memory_unmap (mem, &map_info);
   }
-  if (mem)
-    gst_memory_unref (mem);
+  if (buf)
+    gst_buffer_unref (buf);
 
   if (cairosink)
     gst_object_unref (cairosink);
@@ -483,7 +485,6 @@ gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf)
 {
   GstCairoSink *cairosink = GST_CAIRO_SINK (video_sink);
   GstStructure *params;
-  GstMemory *mem;
 
   GST_TRACE_OBJECT (video_sink, "Need to show buffer %" GST_PTR_FORMAT, buf);
   if (gst_buffer_n_memory (buf) != 1) {
@@ -492,11 +493,9 @@ gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf)
     return GST_FLOW_ERROR;
   }
 
-  mem = gst_buffer_peek_memory (buf, 0);
-
   params = gst_structure_new ("show-frame",
       "cairosink", G_TYPE_POINTER, gst_object_ref (cairosink),
-      "memory", G_TYPE_POINTER, gst_memory_ref (mem),
+      "buffer", G_TYPE_POINTER, gst_buffer_ref (buf),
       "width", G_TYPE_INT, cairosink->width,
       "height", G_TYPE_INT, cairosink->height, NULL);
 
