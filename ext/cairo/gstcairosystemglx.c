@@ -281,6 +281,9 @@ _glx_query_can_map (cairo_surface_t * surface)
 
   int num_returned = 0;
 
+  if (g_getenv ("GSTCAIROSINK_DISABLE_MAP") != NULL)
+    return FALSE;
+
   if (surface) {
     Display *display;
 
