@@ -107,6 +107,9 @@ static gboolean gst_cairo_sink_stop (GstBaseSink * base_sink);
 static gboolean gst_cairo_sink_set_caps (GstBaseSink * sink, GstCaps * caps);
 
 static GstFlowReturn
+gst_cairo_sink_prepare (GstBaseSink * sink, GstBuffer * buffer);
+
+static GstFlowReturn
 gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf);
 
 static gpointer gst_cairo_sink_thread_init (gpointer data);
@@ -212,6 +215,8 @@ gst_cairo_sink_class_init (GstCairoSinkClass * klass)
   base_sink_class->stop = gst_cairo_sink_stop;
   base_sink_class->set_caps = gst_cairo_sink_set_caps;
   base_sink_class->propose_allocation = gst_cairo_sink_propose_allocation;
+  if (g_getenv ("GSTCAIROSINK_SEPARATE_COPY"))
+    base_sink_class->prepare = GST_DEBUG_FUNCPTR (gst_cairo_sink_prepare);
   video_sink_class->show_frame = GST_DEBUG_FUNCPTR (gst_cairo_sink_show_frame);
 
   g_object_class_install_property (gobject_class, PROP_CAIRO_SURFACE,
@@ -385,28 +390,17 @@ gst_cairo_sink_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
+/* To be run in render thread with context acquired */
 static gboolean
-_show_frame (GstStructure * params)
+_copy_frame_impl (GstCairoSink * cairosink, GstBuffer * buf,
+    gint width, gint height)
 {
-  GstMemory *mem = NULL;
-  GstBuffer *buf = NULL;
-  cairo_surface_t *surface = NULL;
-  GstCairoSink *cairosink = NULL;
   cairo_t *context;
-  GstMapInfo map_info = { 0, };
-  gint width, height;
   gfloat xscale, yscale;
-
-  if (!gst_structure_get (params, "cairosink", G_TYPE_POINTER, &cairosink,
-          "buffer", G_TYPE_POINTER, &buf,
-          "width", G_TYPE_INT, &width, "height", G_TYPE_INT, &height, NULL)) {
-    goto end;
-  }
-
-  if (!gst_cairo_sink_acquire_context (cairosink)) {
-    GST_WARNING_OBJECT (cairosink, "could not acquire context");
-    goto end;
-  }
+  GstMapInfo map_info = { 0, };
+  cairo_surface_t *surface = NULL;
+  GstMemory *mem = NULL;
+  gboolean ret = TRUE;
 
   mem = gst_buffer_peek_memory (buf, 0);
 
@@ -415,6 +409,7 @@ _show_frame (GstStructure * params)
         cairosink->device, mem);
     if (!surface) {
       GST_WARNING_OBJECT (cairosink, "Backend could not create new surface");
+      ret = FALSE;
       goto end;
     }
   } else if (gst_memory_map (mem, &map_info, GST_MAP_READ)) {
@@ -425,6 +420,7 @@ _show_frame (GstStructure * params)
       GST_ERROR_OBJECT (cairosink, "Incompatible stride? width:%d height:%d "
           "expected stride: %d expected size: %d actual size: %ld",
           width, height, stride, stride * height, map_info.size);
+      ret = FALSE;
       goto end;
     }
 
@@ -436,6 +432,7 @@ _show_frame (GstStructure * params)
   } else {
     GST_ERROR_OBJECT (cairosink,
         "Do not know how to upload data from %" GST_PTR_FORMAT, mem);
+    ret = FALSE;
     goto end;
   }
 
@@ -455,10 +452,7 @@ _show_frame (GstStructure * params)
   gl_debug ("cairo_paint() done");
   cairo_destroy (context);
 
-  cairosink->backend->show (cairosink->surface);
-
 end:
-  gst_cairo_sink_release_context (cairosink);
 
   if (mem->allocator == cairosink->allocator) {
     if (surface)
@@ -469,6 +463,39 @@ end:
     if (map_info.data)
       gst_memory_unmap (mem, &map_info);
   }
+
+  return ret;
+}
+
+static gboolean
+_show_frame (GstStructure * params)
+{
+  GstBuffer *buf = NULL;
+  GstCairoSink *cairosink = NULL;
+  gint width, height;
+
+  if (!gst_structure_get (params, "cairosink", G_TYPE_POINTER, &cairosink,
+          "buffer", G_TYPE_POINTER, &buf,
+          "width", G_TYPE_INT, &width, "height", G_TYPE_INT, &height, NULL)) {
+    goto end;
+  }
+
+  if (!gst_cairo_sink_acquire_context (cairosink)) {
+    GST_WARNING_OBJECT (cairosink, "could not acquire context");
+    goto end;
+  }
+
+  if (!g_getenv ("GSTCAIROSINK_SEPARATE_COPY")) {
+    gboolean ret = _copy_frame_impl (cairosink, buf, width, height);
+    if (!ret)
+      goto end;
+  }
+
+  cairosink->backend->show (cairosink->surface);
+
+end:
+  gst_cairo_sink_release_context (cairosink);
+
   if (buf)
     gst_buffer_unref (buf);
 
@@ -507,6 +534,67 @@ gst_cairo_sink_show_frame (GstVideoSink * video_sink, GstBuffer * buf)
   return GST_FLOW_OK;
 }
 
+static gboolean
+_copy_frame (GstStructure * params)
+{
+  GstBuffer *buf = NULL;
+  GstCairoSink *cairosink = NULL;
+  gint width, height;
+
+  if (!gst_structure_get (params, "cairosink", G_TYPE_POINTER, &cairosink,
+          "buffer", G_TYPE_POINTER, &buf,
+          "width", G_TYPE_INT, &width, "height", G_TYPE_INT, &height, NULL)) {
+    goto end;
+  }
+
+  if (!gst_cairo_sink_acquire_context (cairosink)) {
+    GST_WARNING_OBJECT (cairosink, "could not acquire context");
+    goto end;
+  }
+
+  _copy_frame_impl (cairosink, buf, width, height);
+
+
+end:
+  gst_cairo_sink_release_context (cairosink);
+
+  if (buf)
+    gst_buffer_unref (buf);
+
+  if (cairosink)
+    gst_object_unref (cairosink);
+
+  gst_structure_free (params);
+
+  return FALSE;
+}
+
+static GstFlowReturn
+gst_cairo_sink_prepare (GstBaseSink * sink, GstBuffer * buf)
+{
+  GstCairoSink *cairosink = GST_CAIRO_SINK (sink);
+  GstStructure *params;
+
+  GST_TRACE_OBJECT (cairosink, "Need to prepare buffer %" GST_PTR_FORMAT, buf);
+  if (gst_buffer_n_memory (buf) != 1) {
+    GST_ERROR_OBJECT (cairosink, "Handling of buffer with more than one "
+        "GstMemory not implemented");
+    return GST_FLOW_ERROR;
+  }
+
+  params = gst_structure_new ("copy-frame",
+      "cairosink", G_TYPE_POINTER, gst_object_ref (cairosink),
+      "buffer", G_TYPE_POINTER, gst_buffer_ref (buf),
+      "width", G_TYPE_INT, cairosink->width,
+      "height", G_TYPE_INT, cairosink->height, NULL);
+
+  g_main_context_invoke (cairosink->render_thread_info->context,
+      (GSourceFunc) _copy_frame, params);
+
+  GST_TRACE_OBJECT (cairosink, "Returning");
+
+  return GST_FLOW_OK;
+}
 
 static GstCairoSystem *
 _get_system (GstCairoSystemType type)
