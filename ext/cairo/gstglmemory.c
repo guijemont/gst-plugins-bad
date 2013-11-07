@@ -56,6 +56,10 @@
 #define CAIROSINK_USE_PBO
 #elif USE_CAIRO_GLESV2
 #include <GLES2/gl2.h>
+#ifndef GL_BGRA
+#include <GLES2/gl2ext.h>
+#define GL_BGRA GL_BGRA_EXT
+#endif
 #endif
 
 #include <gst/gst.h>
@@ -167,7 +171,8 @@ _do_alloc (GstStructure * structure)
     /* create PBO */
     glGenBuffers (1, &glmem->pbo);
     glBindBuffer (GL_PIXEL_UNPACK_BUFFER, glmem->pbo);
-    glBufferData (GL_PIXEL_UNPACK_BUFFER, glmem->data_size, NULL, GL_STREAM_DRAW);
+    glBufferData (GL_PIXEL_UNPACK_BUFFER, glmem->data_size, NULL,
+        GL_STREAM_DRAW);
     glBindBuffer (GL_PIXEL_UNPACK_BUFFER, 0);
 #endif
     glallocator->release_context (glallocator->user_data);

@@ -49,8 +49,12 @@
 #define _GST_CAIRO_GL_DEBUG_H_
 #include <glib.h>
 
+#ifdef USE_CAIRO_GL
 #define GL_GLEXT_PROTOTYPES
 #include <GL/gl.h>
+#elif USE_CAIRO_GLESV2
+#include <GLES2/gl2.h>
+#endif
 #include <gst/gst.h>
 
 #ifdef CAIROSINK_GL_DEBUG
