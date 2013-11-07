@@ -52,6 +52,7 @@
 
 #include <cairo-gl.h>
 #include <gst/gst.h>
+#include <X11/Xlib.h>
 
 #include "gstcairosystem.h"
 
