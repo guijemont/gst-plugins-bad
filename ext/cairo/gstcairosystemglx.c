@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2013 Samsung Electronics Corporation. All rights reserved.
  *   @author: Guillaume Emont <guijemont@igalia.com>
+ *   @author: Henry Song <henry.song@samsung.com>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided the following conditions
@@ -80,8 +81,8 @@ GstCairoSystemGLX gst_cairo_system_glx = {
   NULL
 };
 
-#define GL_VERSION_ENCODE(major, minor) ( \
-  ((major) * 256) + ((minor) * 1))
+#define ENCODE_GL_VERSION(major, minor) ( \
+  ((major) << 8) + ((minor)))
 
 static int multisampleAttributes[] = {
   GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
@@ -107,26 +108,30 @@ static int singleSampleAttributes[] = {
   None
 };
 
-/* copy from cairo */
 static int
 get_gl_version (void)
 {
   int major, minor;
+  char *minor_start = NULL;
+  char *major_start = NULL;
   const char *version = (const char *) glGetString (GL_VERSION);
   const char *dot = version == NULL ? NULL : strchr (version, '.');
-  const char *major_start = dot;
 
-  if (dot == NULL || dot == version || *(dot + 1) == '\0') {
+  if (dot == NULL || dot == version || *(dot + 1) == 0) {
     major = 0;
     minor = 0;
   } else {
-    while (major_start > version && *major_start != ' ')
-      --major_start;
+    major_start = (char *) (dot - 1);
+    minor_start = (char *) (dot + 1);
+
+    while (*major_start != ' ' && major_start != version)
+      major_start--;
+
     major = strtol (major_start, NULL, 10);
-    minor = strtol (dot + 1, NULL, 10);
+    minor = strtol (minor_start, NULL, 10);
   }
 
-  return GL_VERSION_ENCODE (major, minor);
+  return ENCODE_GL_VERSION (major, minor);
 }
 
 static void
@@ -297,7 +302,7 @@ _glx_query_can_map (cairo_surface_t * surface)
     cairo_device_acquire (device);
     gl_version = get_gl_version ();
     cairo_device_release (device);
-    if (gl_version >= GL_VERSION_ENCODE (1, 5))
+    if (gl_version >= ENCODE_GL_VERSION (1, 5))
       return TRUE;
 
     return FALSE;
@@ -354,7 +359,7 @@ _glx_query_can_map (cairo_surface_t * surface)
   glXDestroyContext (system->display, glx_context);
   XSync (system->display, True);
 
-  if (gl_version >= GL_VERSION_ENCODE (1, 5))
+  if (gl_version >= ENCODE_GL_VERSION (1, 5))
     return TRUE;
 
   return FALSE;
