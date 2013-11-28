@@ -213,6 +213,9 @@ _egl_create_display_surface (gint width, gint height)
   XFlush (system->display);
 
   cairo_device = cairo_egl_device_create (egl_display, egl_context);
+  if (cairo_device == NULL
+      || cairo_device_status (cairo_device) != CAIRO_STATUS_SUCCESS)
+    goto CLEANUP_CONTEXT;
   cairo_surface = cairo_gl_surface_create_for_egl (cairo_device, egl_surface,
       width, height);
 
@@ -226,6 +229,8 @@ CLEANUP_X:
   GST_WARNING ("Could not initialise EGL context correctly");
   XDestroyWindow (system->display, system->display_window);
   XCloseDisplay (system->display);
+  system->display = NULL;
+  system->display_window = None;
   return NULL;
 }
 
