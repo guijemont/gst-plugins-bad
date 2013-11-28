@@ -56,6 +56,14 @@
 
 #include "gstcairosystem.h"
 
+#ifdef USE_CAIRO_GLESV2
+#define GST_CAIRO_RENDERABLE_TYPE EGL_OPENGL_ES2_BIT
+#define GST_CAIRO_API EGL_OPENGL_ES_API
+#else /* USE_CAIRO_GL */
+#define GST_CAIRO_RENDERABLE_TYPE EGL_OPENGL_BIT
+#define GST_CAIRO_API EGL_OPENGL_API
+#endif
+
 static cairo_surface_t *_egl_create_display_surface (gint width, gint height);
 
 static gboolean _egl_query_can_map (cairo_surface_t * surface);
@@ -85,7 +93,7 @@ GstCairoSystemEGL gst_cairo_system_egl = {
 
 static EGLint multisampleAttributes[] = {
   EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-  EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+  EGL_RENDERABLE_TYPE, GST_CAIRO_RENDERABLE_TYPE,
   EGL_RED_SIZE, 1,              /* the minmal number of bits per component    */
   EGL_GREEN_SIZE, 1,
   EGL_BLUE_SIZE, 1,
@@ -97,7 +105,7 @@ static EGLint multisampleAttributes[] = {
 
 static EGLint singleSampleAttributes[] = {
   EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-  EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+  EGL_RENDERABLE_TYPE, GST_CAIRO_RENDERABLE_TYPE,
   EGL_RED_SIZE, 1,              /* the minmal number of bits per component    */
   EGL_GREEN_SIZE, 1,
   EGL_BLUE_SIZE, 1,
@@ -179,7 +187,7 @@ _egl_create_display_surface (gint width, gint height)
   if (!eglInitialize (egl_display, &major, &minor))
     goto CLEANUP_DISPLAY;
 
-  if (!eglBindAPI (EGL_OPENGL_ES_API))
+  if (!eglBindAPI (GST_CAIRO_API))
     goto CLEANUP_DISPLAY;
 
   if (!eglChooseConfig (egl_display, multisampleAttributes, &egl_config,
