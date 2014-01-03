@@ -253,6 +253,50 @@ if test "x$HAVE_X11" = "xyes"; then
   AC_DEFINE(HAVE_X11, 1, [Define if you have X11 library])
 fi
 
+dnl whether to use cairo-gl or cairo-gles for cairosink (at most one of the two
+dnl can be used)
+PKG_CHECK_MODULES(CAIRO_GLESV2, cairo-glesv2, HAVE_CAIRO_GLESV2=yes, HAVE_CAIRO_GLESV2=no)
+AC_SUBST(CAIRO_GLESV2_LIBS)
+AC_SUBST(CAIRO_GLESV2_CFLAGS)
+
+PKG_CHECK_MODULES(CAIRO_GL, cairo-gl, HAVE_CAIRO_GL=yes, HAVE_CAIRO_GL=no)
+AC_SUBST(CAIRO_GL_LIBS)
+AC_SUBST(CAIRO_GL_CFLAGS)
+if test "x$HAVE_CAIRO_GL" = "xyes"; then
+  AC_DEFINE(HAVE_CAIRO_GL, 1, [Define if you have cairo-gl])
+fi
+
+if test "x$HAVE_CAIRO_GLESV2" = "xyes" ; then
+  USE_CAIRO_GLESV2=yes
+  AC_DEFINE(USE_CAIRO_GLESV2, [1], [Define whether to use cairo-glesv2 for cairosink])
+else if test "x$HAVE_CAIRO_GL" = "xyes" ; then
+  USE_CAIRO_GL=yes
+  AC_DEFINE(USE_CAIRO_GL, [1], [Define whether to use cairo-gl for cairosink])
+fi
+fi
+AM_CONDITIONAL(USE_CAIRO_GL, test "x$USE_CAIRO_GL" = "xyes" )
+AM_CONDITIONAL(USE_CAIRO_GLESV2, test "x$USE_CAIRO_GLESV2" = "xyes" )
+
+dnl whether we have cairo-glx for cairosink
+PKG_CHECK_MODULES(CAIRO_GLX, cairo-glx, HAVE_CAIRO_GLX=yes, HAVE_CAIRO_GLX=no)
+AC_SUBST(CAIRO_GLX_LIBS)
+AC_SUBST(CAIRO_GLX_CFLAGS)
+dnl AC_SUBST(HAVE_CAIRO_GLX)
+if test "x$HAVE_CAIRO_GLX" = "xyes"; then
+  AC_DEFINE(HAVE_CAIRO_GLX, [1], [Define if you have cairo-glx])
+fi
+AM_CONDITIONAL(HAVE_CAIRO_GLX, test "x$HAVE_CAIRO_GLX" = "xyes")
+
+dnl whether we have cairo-egl for cairosink
+PKG_CHECK_MODULES(CAIRO_EGL, cairo-egl, HAVE_CAIRO_EGL=yes, HAVE_CAIRO_EGL=no)
+AC_SUBST(CAIRO_EGL_LIBS)
+AC_SUBST(CAIRO_EGL_CFLAGS)
+dnl AC_SUBST(HAVE_CAIRO_EGL)
+if test "x$HAVE_CAIRO_EGL" = "xyes"; then
+  AC_DEFINE(HAVE_CAIRO_EGL, [1], [Define if you have cairo-egl])
+fi
+AM_CONDITIONAL(HAVE_CAIRO_EGL, test "x$HAVE_CAIRO_EGL" = "xyes")
+
 dnl exif (used on jifmux tests) ****
 PKG_CHECK_MODULES(EXIF, libexif >= 0.6.16, HAVE_EXIF="yes", HAVE_EXIF="no")
 AC_SUBST(EXIF_LIBS)
@@ -1100,15 +1144,15 @@ AG_GST_CHECK_FEATURE(BZ2, [bz2 library], bz2, [
 
 ])
 
-#dnl *** cairo ***
-#translit(dnm, m, l) AM_CONDITIONAL(USE_CAIRO, true)
-#AG_GST_CHECK_FEATURE(CAIRO, [cairo plug-in], cairo, [
-#  PKG_CHECK_MODULES(CAIRO, cairo >= 1.0 glitz-glx, HAVE_CAIRO=yes, [
-#    HAVE_CAIRO=no
-#  ])
-#  AC_SUBST(CAIRO_CFLAGS)
-#  AC_SUBST(CAIRO_LIBS)
-#])
+dnl *** cairo ***
+translit(dnm, m, l) AM_CONDITIONAL(USE_CAIRO, true)
+AG_GST_CHECK_FEATURE(CAIRO, [cairo plug-in], cairo, [
+  PKG_CHECK_MODULES(CAIRO, [cairo >= 1.0 cairo-gobject >= 1.0 ],  HAVE_CAIRO=yes, [
+    HAVE_CAIRO=no
+  ])
+  AC_SUBST(CAIRO_CFLAGS)
+  AC_SUBST(CAIRO_LIBS)
+])
 
 dnl *** chromaprint ***
 translit(dnm, m, l) AM_CONDITIONAL(USE_CHROMAPRINT, true)
@@ -2208,6 +2252,7 @@ AM_CONDITIONAL(USE_VOAMRWBENC, false)
 AM_CONDITIONAL(USE_VOAACENC, false)
 AM_CONDITIONAL(USE_APEXSINK, false)
 AM_CONDITIONAL(USE_BZ2, false)
+AM_CONDITIONAL(USE_CAIRO, false)
 AM_CONDITIONAL(USE_CHROMAPRINT, false)
 AM_CONDITIONAL(USE_CURL, false)
 AM_CONDITIONAL(USE_SSH2, false)
@@ -2484,6 +2529,7 @@ ext/voaacenc/Makefile
 ext/assrender/Makefile
 ext/apexsink/Makefile
 ext/bz2/Makefile
+ext/cairo/Makefile
 ext/chromaprint/Makefile
 ext/curl/Makefile
 ext/dash/Makefile
